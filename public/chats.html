@@ -142,14 +142,16 @@
 
     <button class="fab" onclick="showNewChatModal()">+</button>
 
-    <!-- Модалка нового чата -->
-    <div class="modal hidden" id="new-chat-modal">
-        <div class="modal-content">
-            <h3 style="margin-bottom: 15px;">Новый чат</h3>
-            <input type="text" placeholder="Поиск пользователей..." id="search-users" style="width: 100%; padding: 10px; margin-bottom: 15px; background: #17212b; border: none; color: white;">
-            <div id="search-results"></div>
+  <div class="modal hidden" id="new-chat-modal">
+    <div class="modal-content">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin: 0;">Новый чат</h3>
+            <button onclick="closeModal()" style="background: none; border: none; color: white; font-size: 28px; cursor: pointer; padding: 0 10px;">&times;</button>
         </div>
+        <input type="text" placeholder="Поиск пользователей..." id="search-users" style="width: 100%; padding: 10px; margin-bottom: 15px; background: #17212b; border: none; color: white; border-radius: 5px;">
+        <div id="search-results"></div>
     </div>
+</div>
 
     <script>
         let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
@@ -283,7 +285,11 @@
         function openChat(chatId) {
             window.location.href = `/chat.html?id=${chatId}`;
         }
-
+function closeModal() {
+    document.getElementById('new-chat-modal').classList.add('hidden');
+    document.getElementById('search-results').innerHTML = '';
+    document.getElementById('search-users').value = '';
+}
         function showNewChatModal() {
             document.getElementById('new-chat-modal').classList.remove('hidden');
             document.getElementById('search-users').focus();
@@ -293,8 +299,21 @@
             localStorage.clear();
             window.location.href = '/';
         }
+// Закрытие по клику на фон
+document.getElementById('new-chat-modal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeModal();
+    }
+});
 
+// Закрытие по Escape
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        closeModal();
+    }
+});
         loadChats();
     </script>
 </body>
+
 </html>
