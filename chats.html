@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tapok · чаты</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #17212b;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            color: white;
+            height: 100vh;
+        }
+        .header {
+            background: #2a6ee0;
+            padding: 15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 20px; }
+        .header button {
+            background: transparent;
+            border: 1px solid white;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .search {
+            padding: 10px;
+            background: #1e2b38;
+        }
+        .search input {
+            width: 100%;
+            padding: 10px;
+            background: #242f3d;
+            border: none;
+            color: white;
+            border-radius: 5px;
+        }
+        .chats {
+            padding: 10px;
+            overflow-y: auto;
+            height: calc(100vh - 130px);
+        }
+        .chat-item {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #242f3d;
+            cursor: pointer;
+        }
+        .chat-item:hover { background: #242f3d; }
+        .avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #2a6ee0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 20px;
+        }
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .chat-info { flex: 1; }
+        .chat-name { font-weight: bold; }
+        .chat-last { color: #8a9aa8; font-size: 14px; }
+        .chat-time { font-size: 12px; color: #8a9aa8; }
+        .unread {
+            background: #2a6ee0;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+        .modal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal.hidden { display: none; }
+        .modal-content {
+            background: #242f3d;
+            padding: 20px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .user-item {
+            padding: 10px;
+            border-bottom: 1px solid #17212b;
+            cursor: pointer;
+        }
+        .user-item:hover { background: #17212b; }
+        .fab {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: #2a6ee0;
+            color: white;
+            font-size: 30px;
+            border: none;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Tapok</h1>
+        <div>
+            <button onclick="logout()">Выйти</button>
+        </div>
+    </div>
+
+    <div class="search">
+        <input type="text" placeholder="Поиск чатов..." id="search-input">
+    </div>
+
+    <div class="chats" id="chats-list">
+        <div style="text-align: center; padding: 20px;">Загрузка...</div>
+    </div>
+
+    <button class="fab" onclick="showNewChatModal()">+</button>
+
+    <!-- Модалка нового чата -->
+    <div class="modal hidden" id="new-chat-modal">
+        <div class="modal-content">
+            <h3 style="margin-bottom: 15px;">Новый чат</h3>
+            <input type="text" placeholder="Поиск пользователей..." id="search-users" style="width: 100%; padding: 10px; margin-bottom: 15px; background: #17212b; border: none; color: white;">
+            <div id="search-results"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        let ws;
+
+        if (!localStorage.getItem('token')) {
+            window.location.href = '/';
+        }
+
+        // WebSocket
+        function connectWS() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type: 'auth',
+                    token: localStorage.getItem('token')
+                }));
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type === 'new_message') {
+                    loadChats();
+                }
+            };
+        }
+        connectWS();
+
+        // Загрузка чатов
+        async function loadChats() {
+            try {
+                const res = await fetch('/api/chats', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const chats = await res.json();
+                displayChats(chats);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function displayChats(chats) {
+            const list = document.getElementById('chats-list');
+            
+            if (!chats.length) {
+                list.innerHTML = '<div style="text-align: center; padding: 20px;">Нет чатов. Нажми + чтобы начать</div>';
+                return;
+            }
+
+            list.innerHTML = chats.map(chat => {
+                let chatName = chat.name;
+                let avatar = '?';
+
+                if (!chat.is_group && chat.participants) {
+                    const other = chat.participants.find(p => p.id !== currentUser.id);
+                    if (other) {
+                        chatName = other.name;
+                        avatar = other.avatar ? `<img src="${other.avatar}">` : other.name[0];
+                    }
+                }
+
+                const time = chat.last_message_time ? new Date(chat.last_message_time).toLocaleTimeString().slice(0,5) : '';
+
+                return `
+                    <div class="chat-item" onclick="openChat(${chat.id})">
+                        <div class="avatar">${avatar}</div>
+                        <div class="chat-info">
+                            <div class="chat-name">${chatName}</div>
+                            <div class="chat-last">${chat.last_message || '...'}</div>
+                        </div>
+                        <div>
+                            <div class="chat-time">${time}</div>
+                            ${chat.unread_count ? `<div class="unread">${chat.unread_count}</div>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Поиск пользователей
+        let searchTimeout;
+        document.getElementById('search-users').addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => searchUsers(e.target.value), 300);
+        });
+
+        async function searchUsers(query) {
+            if (!query) {
+                document.getElementById('search-results').innerHTML = '';
+                return;
+            }
+
+            const res = await fetch(`/api/users/search?query=${query}`, {
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+            });
+            const users = await res.json();
+
+            document.getElementById('search-results').innerHTML = users.map(u => `
+                <div class="user-item" onclick="createChat(${u.id})">
+                    <div style="display: flex; align-items: center;">
+                        <div class="avatar" style="width: 40px; height: 40px;">${u.avatar ? `<img src="${u.avatar}">` : u.name[0]}</div>
+                        <div style="margin-left: 10px;">
+                            <div>${u.name}</div>
+                            <div style="font-size: 12px; color: #8a9aa8;">@${u.username}</div>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function createChat(userId) {
+            const res = await fetch('/api/chats', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    isGroup: false,
+                    participants: [userId]
+                })
+            });
+
+            const chat = await res.json();
+            document.getElementById('new-chat-modal').classList.add('hidden');
+            window.location.href = `/chat.html?id=${chat.id}`;
+        }
+
+        function openChat(chatId) {
+            window.location.href = `/chat.html?id=${chatId}`;
+        }
+
+        function showNewChatModal() {
+            document.getElementById('new-chat-modal').classList.remove('hidden');
+            document.getElementById('search-users').focus();
+        }
+
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/';
+        }
+
+        loadChats();
+    </script>
+</body>
+</html>

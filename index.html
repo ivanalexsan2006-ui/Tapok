@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tapok · вход</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #17212b;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: white;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: #242f3d;
+            padding: 30px;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 400px;
+        }
+        h1 { text-align: center; margin-bottom: 30px; color: #2a6ee0; }
+        .tab {
+            display: flex;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #17212b;
+        }
+        .tab button {
+            flex: 1;
+            padding: 10px;
+            background: transparent;
+            border: none;
+            color: #8a9aa8;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .tab button.active {
+            color: #2a6ee0;
+            border-bottom: 2px solid #2a6ee0;
+        }
+        input, button {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border: none;
+            font-size: 16px;
+        }
+        input {
+            background: #17212b;
+            color: white;
+        }
+        button {
+            background: #2a6ee0;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:hover { background: #1e4fa0; }
+        .error {
+            color: #f44336;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Tapok</h1>
+        
+        <div class="tab">
+            <button id="tab-login" class="active">Вход</button>
+            <button id="tab-register">Регистрация</button>
+        </div>
+
+        <!-- Форма входа -->
+        <div id="login-form">
+            <input type="text" id="login-username" placeholder="Имя пользователя">
+            <button onclick="login()">Войти</button>
+        </div>
+
+        <!-- Форма регистрации -->
+        <div id="register-form" class="hidden">
+            <input type="text" id="reg-username" placeholder="Имя пользователя (латиница)">
+            <input type="text" id="reg-name" placeholder="Ваше имя">
+            <input type="password" id="reg-password" placeholder="Пароль для всех">
+            <input type="file" id="reg-avatar" accept="image/*">
+            <button onclick="register()">Зарегистрироваться</button>
+        </div>
+
+        <div id="error" class="error"></div>
+    </div>
+
+    <script>
+        // Переключение табов
+        document.getElementById('tab-login').addEventListener('click', () => {
+            document.getElementById('tab-login').classList.add('active');
+            document.getElementById('tab-register').classList.remove('active');
+            document.getElementById('login-form').classList.remove('hidden');
+            document.getElementById('register-form').classList.add('hidden');
+        });
+
+        document.getElementById('tab-register').addEventListener('click', () => {
+            document.getElementById('tab-register').classList.add('active');
+            document.getElementById('tab-login').classList.remove('active');
+            document.getElementById('register-form').classList.remove('hidden');
+            document.getElementById('login-form').classList.add('hidden');
+        });
+
+        // Регистрация
+        async function register() {
+            const username = document.getElementById('reg-username').value;
+            const name = document.getElementById('reg-name').value;
+            const password = document.getElementById('reg-password').value;
+            const avatarFile = document.getElementById('reg-avatar').files[0];
+
+            if (!username || !name || !password) {
+                showError('Заполните все поля');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('name', name);
+            formData.append('password', password);
+            if (avatarFile) formData.append('avatar', avatarFile);
+
+            try {
+                const res = await fetch('/api/register', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    window.location.href = '/chats.html';
+                } else {
+                    showError(data.error || 'Ошибка');
+                }
+            } catch (e) {
+                showError('Ошибка соединения');
+            }
+        }
+
+        // Вход
+        async function login() {
+            const username = document.getElementById('login-username').value;
+
+            if (!username) {
+                showError('Введите имя пользователя');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    window.location.href = '/chats.html';
+                } else {
+                    showError(data.error || 'Ошибка');
+                }
+            } catch (e) {
+                showError('Ошибка соединения');
+            }
+        }
+
+        function showError(msg) {
+            document.getElementById('error').textContent = msg;
+        }
+
+        // Проверяем, может уже залогинены
+        if (localStorage.getItem('token')) {
+            window.location.href = '/chats.html';
+        }
+    </script>
+</body>
+</html>
