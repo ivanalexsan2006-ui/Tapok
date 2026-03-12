@@ -86,13 +86,13 @@
 
         <!-- Форма входа -->
         <div id="login-form">
-            <input type="tel" id="login-phone" placeholder="Номер телефона">
+            <input type="tel" id="login-phone" placeholder="Номер телефона" value="+7" oninput="formatPhone(this)">
             <button onclick="login()">Войти</button>
         </div>
 
         <!-- Форма регистрации -->
         <div id="register-form" class="hidden">
-            <input type="tel" id="reg-phone" placeholder="Номер телефона">
+            <input type="tel" id="reg-phone" placeholder="Номер телефона" value="+7" oninput="formatPhone(this)">
             <input type="text" id="reg-name" placeholder="Ваше имя">
             <input type="password" id="reg-password" placeholder="Пароль для всех">
             <div class="file-input">
@@ -105,6 +105,14 @@
     </div>
 
     <script>
+        function formatPhone(input) {
+            let value = input.value.replace(/[^\d+]/g, '');
+            if (!value.startsWith('+')) {
+                value = '+7' + value.replace(/^\+?7?/, '');
+            }
+            input.value = value;
+        }
+
         document.getElementById('tab-login').addEventListener('click', () => {
             document.getElementById('tab-login').classList.add('active');
             document.getElementById('tab-register').classList.remove('active');
