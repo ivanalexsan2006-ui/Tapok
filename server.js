@@ -161,26 +161,26 @@ async function authenticateToken(req, res, next) {
 
 // РЕГИСТРАЦИЯ
 app.post('/api/register', upload.single('avatar'), async (req, res) => {
-    const { username, name, password } = req.body;
+    const { phone, name, password } = req.body;
     
     // Проверяем пароль для всех
     if (password !== APP_PASSWORD) {
         return res.status(403).json({ error: 'Неверный пароль доступа' });
     }
 
-    if (!username || !name) {
+    if (!phone || !name) {
         return res.status(400).json({ error: 'Заполните все поля' });
     }
 
     try {
         // Проверяем, есть ли уже такой пользователь
         const existing = await pool.query(
-            'SELECT id FROM users WHERE username = $1',
-            [username]
+            'SELECT id FROM users WHERE phone = $1',
+            [phone]
         );
 
         if (existing.rows.length > 0) {
-            return res.status(400).json({ error: 'Такой пользователь уже есть' });
+            return res.status(400).json({ error: 'Такой номер уже зарегистрирован' });
         }
 
         let avatar = null;
@@ -190,13 +190,13 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
 
         // Создаем пользователя
         const result = await pool.query(
-            'INSERT INTO users (username, name, avatar, status) VALUES ($1, $2, $3, $4) RETURNING *',
-            [username, name, avatar, 'online']
+            'INSERT INTO users (phone, name, avatar, status) VALUES ($1, $2, $3, $4) RETURNING *',
+            [phone, name, avatar, 'online']
         );
 
         const user = result.rows[0];
         const token = jwt.sign(
-            { userId: user.id, username: user.username },
+            { userId: user.id, phone: user.phone },
             JWT_SECRET,
             { expiresIn: '30d' }
         );
@@ -206,7 +206,7 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
             token,
             user: {
                 id: user.id,
-                username: user.username,
+                phone: user.phone,
                 name: user.name,
                 avatar: user.avatar
             }
@@ -218,18 +218,18 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
     }
 });
 
-// ВХОД
+// ВХОД ПО ТЕЛЕФОНУ
 app.post('/api/login', async (req, res) => {
-    const { username } = req.body;
+    const { phone } = req.body;
 
-    if (!username) {
-        return res.status(400).json({ error: 'Введите имя пользователя' });
+    if (!phone) {
+        return res.status(400).json({ error: 'Введите номер телефона' });
     }
 
     try {
         const result = await pool.query(
-            'SELECT * FROM users WHERE username = $1',
-            [username]
+            'SELECT * FROM users WHERE phone = $1',
+            [phone]
         );
 
         if (result.rows.length === 0) {
@@ -245,7 +245,7 @@ app.post('/api/login', async (req, res) => {
         );
 
         const token = jwt.sign(
-            { userId: user.id, username: user.username },
+            { userId: user.id, phone: user.phone },
             JWT_SECRET,
             { expiresIn: '30d' }
         );
@@ -255,7 +255,7 @@ app.post('/api/login', async (req, res) => {
             token,
             user: {
                 id: user.id,
-                username: user.username,
+                phone: user.phone,
                 name: user.name,
                 avatar: user.avatar
             }
@@ -266,7 +266,6 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
-
 // ПОЛУЧИТЬ ИНФО О СЕБЕ
 app.get('/api/user/me', authenticateToken, async (req, res) => {
     try {
@@ -583,4 +582,5 @@ function getLocalIP() {
         }
     }
     return 'localhost';
+
 }
