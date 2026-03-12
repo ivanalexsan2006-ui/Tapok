@@ -1,149 +1,888 @@
-// ===== ПОЛНОСТЬЮ ЗАМЕНИТЬ функцию subscribeToPush =====
-async function subscribeToPush() {
-    console.log('📱 Проверка поддержки уведомлений...');
-    
-    // Проверка поддержки браузером
-    if (!('Notification' in window)) {
-        console.log('❌ Браузер не поддерживает уведомления');
-        return;
-    }
-    
-    if (!('serviceWorker' in navigator)) {
-        console.log('❌ Service Worker не поддерживается');
-        return;
-    }
-    
-    // Определяем iOS
-    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    
-    console.log(`📱 Устройство: ${isIOS ? 'iOS' : 'другое'}, Safari: ${isSafari}`);
-    
-    try {
-        // Запрашиваем разрешение
-        console.log('🔔 Запрашиваем разрешение на уведомления...');
-        const permission = await Notification.requestPermission();
-        console.log('📱 Разрешение:', permission);
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tapok · чат</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #17212b;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            color: white;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .header {
+            background: #2a6ee0;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-shrink: 0;
+        }
+        .back-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .chat-info { flex: 1; min-width: 0; }
+        .chat-name { 
+            font-size: 18px; 
+            font-weight: bold; 
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .chat-status { 
+            font-size: 12px; 
+            opacity: 0.8;
+        }
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .message {
+            max-width: 80%;
+            padding: 10px 14px;
+            border-radius: 20px;
+            position: relative;
+            word-wrap: break-word;
+            animation: fadeIn 0.2s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .my-message {
+            align-self: flex-end;
+            background: #2a6ee0;
+            border-bottom-right-radius: 4px;
+        }
+        .their-message {
+            align-self: flex-start;
+            background: #242f3d;
+            border-bottom-left-radius: 4px;
+        }
+        .message-time {
+            font-size: 10px;
+            opacity: 0.6;
+            margin-top: 4px;
+            text-align: right;
+        }
+        .message-media {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 12px;
+            margin: 4px 0;
+            cursor: pointer;
+        }
+        .message-media video {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 12px;
+        }
+        .voice-message {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 180px;
+        }
+        .voice-play {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            font-size: 16px;
+            cursor: pointer;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .voice-wave {
+            flex: 1;
+            height: 36px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 18px;
+            position: relative;
+            overflow: hidden;
+        }
+        .voice-progress {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 0%;
+            background: rgba(255,255,255,0.4);
+            transition: width 0.1s linear;
+        }
+        .voice-time {
+            font-size: 11px;
+            opacity: 0.6;
+            min-width: 35px;
+        }
         
-        if (permission === 'granted') {
-            // Регистрируем Service Worker
-            console.log('🔄 Регистрация Service Worker...');
-            
-            // Удаляем старый Service Worker если есть
-            const registrations = await navigator.serviceWorker.getRegistrations();
-            for (let registration of registrations) {
-                await registration.unregister();
-                console.log('🗑️ Удален старый Service Worker');
+        /* ===== ИСПРАВЛЕННЫЙ INPUT-AREA ===== */
+        .input-area {
+            background: #1e2b38;
+            padding: 10px;
+            border-top: 1px solid #2a3b4a;
+            flex-shrink: 0;
+            width: 100%;
+        }
+
+        .preview-area {
+            display: flex;
+            gap: 10px;
+            overflow-x: auto;
+            padding: 10px;
+            background: #242f3d;
+            border-radius: 12px;
+            margin-bottom: 10px;
+            flex-wrap: nowrap;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .preview-area.hidden { 
+            display: none; 
+        }
+
+        .preview-item {
+            position: relative;
+            width: 70px;
+            height: 70px;
+            flex-shrink: 0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .preview-item img, 
+        .preview-item video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .preview-remove {
+            position: absolute;
+            top: -5px;
+            right: -5px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #f44336;
+            color: white;
+            border: 2px solid #1e2b38;
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            line-height: 1;
+            z-index: 5;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            width: 100%;
+        }
+
+        .message-input {
+            flex: 1;
+            min-width: 0;
+            padding: 12px 16px;
+            background: #242f3d;
+            border: none;
+            border-radius: 25px;
+            color: white;
+            font-size: 16px;
+            outline: none;
+            -webkit-appearance: none;
+        }
+
+        .message-input:focus {
+            outline: 2px solid #2a6ee0;
+        }
+
+        .attach-btn, 
+        .voice-btn,
+        .send-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            background: #2a6ee0;
+            border: none;
+            color: white;
+            font-size: 22px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            transition: transform 0.1s, background 0.2s;
+        }
+
+        .attach-btn:active,
+        .voice-btn:active,
+        .send-btn:active {
+            transform: scale(0.95);
+            background: #1e4fa0;
+        }
+
+        .voice-btn.recording {
+            background: #f44336;
+            animation: pulse 1s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        .typing {
+            color: #8a9aa8;
+            font-size: 12px;
+            padding: 5px 15px;
+            font-style: italic;
+            flex-shrink: 0;
+        }
+        
+        .hidden { display: none; }
+        
+        .error-message {
+            color: #f44336;
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .delete-message {
+            position: absolute;
+            top: -8px;
+            right: -8px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            font-size: 16px;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .message:hover .delete-message,
+        .message:active .delete-message {
+            display: flex;
+        }
+
+        /* Фикс для iOS */
+        @supports (-webkit-touch-callout: none) {
+            .input-area {
+                padding-bottom: 15px;
             }
             
-            // Регистрируем новый
-            const registration = await navigator.serviceWorker.register('/service-worker.js', {
-                scope: '/'
+            .message-input {
+                font-size: 16px;
+            }
+            
+            .delete-message {
+                display: flex; /* Всегда показываем на iOS */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-btn" onclick="window.location.href='/chats.html'">←</button>
+        <div class="chat-info">
+            <div class="chat-name" id="chat-name">Загрузка...</div>
+            <div class="chat-status" id="chat-status"></div>
+        </div>
+    </div>
+
+    <div class="messages" id="messages"></div>
+    <div class="typing hidden" id="typing">печатает...</div>
+
+    <div class="input-area">
+        <div class="preview-area hidden" id="preview-area"></div>
+        <div class="input-wrapper">
+            <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
+            <input type="text" class="message-input" id="message-input" placeholder="Сообщение" autocomplete="off">
+            <button class="voice-btn" id="record-btn" onclick="toggleRecording()">🎤</button>
+            <button class="send-btn" onclick="sendMessage()">📤</button>
+        </div>
+    </div>
+
+    <input type="file" id="file-input" multiple accept="image/*,video/*" style="display: none;">
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const chatId = urlParams.get('id');
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        let ws;
+        let audioPlayers = {};
+
+        if (!localStorage.getItem('token')) {
+            window.location.href = '/';
+        }
+
+        if (!chatId) {
+            document.body.innerHTML = '<div class="error-message">Ошибка: не указан чат. <a href="/chats.html">Вернуться к чатам</a></div>';
+            throw new Error('Нет ID чата');
+        }
+
+        // ===== WEBSOCKET =====
+        function connectWS() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type: 'auth',
+                    token: localStorage.getItem('token')
+                }));
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type === 'new_message' && data.chatId == chatId) {
+                    if (data.messages && Array.isArray(data.messages)) {
+                        data.messages.forEach(msg => addMessage(msg, msg.user_id !== currentUser.id));
+                    }
+                }
+                if (data.type === 'typing' && data.chatId == chatId && data.userId !== currentUser.id) {
+                    document.getElementById('typing').classList.toggle('hidden', !data.isTyping);
+                }
+                if (data.type === 'user_status') {
+                    updateUserStatus(data.userId, data.status);
+                }
+            };
+
+            ws.onclose = () => {
+                setTimeout(connectWS, 1000);
+            };
+        }
+        connectWS();
+
+        // ===== ЗАГРУЗКА ИНФОРМАЦИИ О ЧАТЕ =====
+        async function loadChatInfo() {
+            try {
+                const res = await fetch(`/api/chats/${chatId}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+
+                if (!res.ok) throw new Error('Чат не найден');
+
+                const chat = await res.json();
+
+                if (chat.is_group) {
+                    document.getElementById('chat-name').textContent = chat.name || 'Группа';
+                    document.getElementById('chat-status').textContent = chat.participants ? `${chat.participants.length} участников` : '';
+                } else {
+                    const other = chat.participants?.find(p => p.id !== currentUser.id);
+                    if (other) {
+                        document.getElementById('chat-name').textContent = other.name || 'Пользователь';
+                        document.getElementById('chat-status').textContent = other.status === 'online' ? 'онлайн' : 'офлайн';
+                    }
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки чата:', e);
+                document.getElementById('chat-name').textContent = 'Ошибка загрузки';
+            }
+        }
+
+        // ===== ЗАГРУЗКА СООБЩЕНИЙ =====
+        async function loadMessages() {
+            try {
+                const res = await fetch(`/api/chats/${chatId}/messages`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+
+                if (!res.ok) throw new Error('Не удалось загрузить сообщения');
+
+                const messages = await res.json();
+                if (Array.isArray(messages)) {
+                    messages.forEach(msg => addMessage(msg, msg.user_id !== currentUser.id));
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки сообщений:', e);
+            }
+        }
+
+        // ===== ДОБАВЛЕНИЕ СООБЩЕНИЯ =====
+        function addMessage(msg, isTheir) {
+            const messagesDiv = document.getElementById('messages');
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${isTheir ? 'their-message' : 'my-message'}`;
+            messageDiv.id = `msg-${msg.id}`;
+
+            let content = '';
+            
+            if (msg.media_type === 'photo') {
+                content += `<img src="${msg.media_url}" class="message-media" onclick="window.open('${msg.media_url}')">`;
+            }
+            
+            if (msg.media_type === 'video') {
+                content += `<video src="${msg.media_url}" controls class="message-media"></video>`;
+            }
+            
+            if (msg.voice_url) {
+                const duration = msg.voice_duration ? formatDuration(msg.voice_duration) : '0:03';
+                content += `
+                    <div class="voice-message">
+                        <button class="voice-play" onclick="playVoice('${msg.voice_url}', this)">▶️</button>
+                        <div class="voice-wave">
+                            <div class="voice-progress" style="width: 0%"></div>
+                        </div>
+                        <span class="voice-time">${duration}</span>
+                    </div>
+                `;
+            }
+            
+            if (msg.text) {
+                content += `<div>${msg.text}</div>`;
+            }
+
+            const time = msg.created_at ? new Date(msg.created_at).toLocaleTimeString().slice(0,5) : '';
+            content += `<div class="message-time">${time}</div>`;
+
+            if (msg.user_id === currentUser.id) {
+                content += `<button class="delete-message" onclick="deleteMessage(${msg.id})">×</button>`;
+            }
+
+            messageDiv.innerHTML = content;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // ===== ИСПРАВЛЕННОЕ УДАЛЕНИЕ СООБЩЕНИЯ =====
+        async function deleteMessage(messageId) {
+            // Для iOS используем confirm с задержкой
+            if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+                setTimeout(async () => {
+                    const confirmed = confirm('Удалить сообщение?');
+                    if (confirmed) {
+                        await performDelete(messageId);
+                    }
+                }, 50);
+            } else {
+                if (confirm('Удалить сообщение?')) {
+                    await performDelete(messageId);
+                }
+            }
+        }
+
+        async function performDelete(messageId) {
+            console.log('🗑️ Удаляем сообщение', messageId);
+            
+            try {
+                const res = await fetch(`/api/messages/${messageId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (res.ok) {
+                    const msgElement = document.getElementById(`msg-${messageId}`);
+                    if (msgElement) {
+                        msgElement.style.opacity = '0';
+                        msgElement.style.transform = 'scale(0.8)';
+                        msgElement.style.transition = 'all 0.2s';
+                        
+                        setTimeout(() => {
+                            msgElement.remove();
+                        }, 200);
+                    }
+                } else {
+                    const error = await res.json();
+                    alert('Ошибка: ' + (error.error || 'Не удалось удалить сообщение'));
+                }
+            } catch (e) {
+                console.error('❌ Ошибка удаления сообщения:', e);
+                alert('Ошибка соединения с сервером');
+            }
+        }
+
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        // ===== ГОЛОСОВЫЕ =====
+        window.playVoice = (url, btn) => {
+            if (audioPlayers[url]) {
+                audioPlayers[url].pause();
+                delete audioPlayers[url];
+                btn.textContent = '▶️';
+                return;
+            }
+
+            const audio = new Audio(url);
+            audioPlayers[url] = audio;
+            
+            const wave = btn.parentElement.querySelector('.voice-progress');
+            const timeSpan = btn.parentElement.querySelector('.voice-time');
+            
+            audio.ontimeupdate = () => {
+                const progress = (audio.currentTime / audio.duration) * 100;
+                if (wave) wave.style.width = `${progress}%`;
+                
+                const current = formatDuration(Math.floor(audio.currentTime));
+                const total = formatDuration(Math.floor(audio.duration));
+                if (timeSpan) timeSpan.textContent = `${current}/${total}`;
+            };
+            
+            audio.onended = () => {
+                btn.textContent = '▶️';
+                if (wave) wave.style.width = '0%';
+                delete audioPlayers[url];
+            };
+            
+            audio.play();
+            btn.textContent = '⏸️';
+        };
+
+        // ===== ФОТО/ВИДЕО =====
+        let selectedFiles = [];
+
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            const files = Array.from(e.target.files);
+            selectedFiles = [...selectedFiles, ...files];
+            updatePreview();
+        });
+
+        function updatePreview() {
+            const previewArea = document.getElementById('preview-area');
+            
+            if (selectedFiles.length === 0) {
+                previewArea.classList.add('hidden');
+                return;
+            }
+
+            previewArea.classList.remove('hidden');
+            previewArea.innerHTML = selectedFiles.map((file, index) => {
+                const url = URL.createObjectURL(file);
+                if (file.type.startsWith('image/')) {
+                    return `
+                        <div class="preview-item">
+                            <img src="${url}">
+                            <button class="preview-remove" onclick="removeFile(${index})">×</button>
+                        </div>
+                    `;
+                } else {
+                    return `
+                        <div class="preview-item">
+                            <video src="${url}"></video>
+                            <button class="preview-remove" onclick="removeFile(${index})">×</button>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        function removeFile(index) {
+            selectedFiles.splice(index, 1);
+            updatePreview();
+        }
+
+        // ===== ГОЛОСОВАЯ ЗАПИСЬ =====
+        let mediaRecorder;
+        let audioChunks = [];
+        let isRecording = false;
+        let recordingStartTime;
+        let recordingTimer;
+
+        async function toggleRecording() {
+            const recordBtn = document.getElementById('record-btn');
+            
+            if (!isRecording) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    
+                    mediaRecorder.ondataavailable = (e) => {
+                        audioChunks.push(e.data);
+                    };
+                    
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const duration = Math.floor((Date.now() - recordingStartTime) / 1000);
+                        
+                        const formData = new FormData();
+                        formData.append('voice', audioBlob, 'voice.webm');
+                        formData.append('duration', duration.toString());
+                        
+                        try {
+                            await fetch(`/api/chats/${chatId}/messages`, {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': `Bearer ${localStorage.getItem('token')}`
+                                },
+                                body: formData
+                            });
+                        } catch (e) {
+                            console.error('Ошибка отправки голосового:', e);
+                        }
+                        
+                        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+                    };
+                    
+                    mediaRecorder.start();
+                    isRecording = true;
+                    recordingStartTime = Date.now();
+                    recordBtn.classList.add('recording');
+                    recordBtn.textContent = '⏹️';
+                    
+                    recordingTimer = setInterval(() => {
+                        const seconds = Math.floor((Date.now() - recordingStartTime) / 1000);
+                        if (seconds >= 60) stopRecording();
+                    }, 1000);
+                    
+                } catch (e) {
+                    alert('Нет доступа к микрофону');
+                }
+            } else {
+                stopRecording();
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && isRecording) {
+                mediaRecorder.stop();
+                isRecording = false;
+                clearInterval(recordingTimer);
+                const recordBtn = document.getElementById('record-btn');
+                recordBtn.classList.remove('recording');
+                recordBtn.textContent = '🎤';
+            }
+        }
+
+        // ===== ОТПРАВКА СООБЩЕНИЯ =====
+        async function sendMessage() {
+            const input = document.getElementById('message-input');
+            const text = input.value.trim();
+            
+            if (!text && selectedFiles.length === 0) return;
+
+            const formData = new FormData();
+            
+            if (text) {
+                formData.append('text', text);
+                input.value = '';
+            }
+
+            selectedFiles.forEach(file => {
+                if (file.type.startsWith('image/')) {
+                    formData.append('photos', file);
+                } else if (file.type.startsWith('video/')) {
+                    formData.append('videos', file);
+                }
             });
+
+            selectedFiles = [];
+            document.getElementById('preview-area').classList.add('hidden');
+            document.getElementById('preview-area').innerHTML = '';
+
+            try {
+                await fetch(`/api/chats/${chatId}/messages`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: formData
+                });
+            } catch (e) {
+                console.error('Ошибка отправки:', e);
+                alert('Не удалось отправить сообщение');
+            }
+        }
+
+        // ===== ПЕЧАТАНИЕ =====
+        let typingTimeout;
+        document.getElementById('message-input').addEventListener('input', () => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'typing',
+                    chatId: parseInt(chatId),
+                    isTyping: true
+                }));
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    ws.send(JSON.stringify({
+                        type: 'typing',
+                        chatId: parseInt(chatId),
+                        isTyping: false
+                    }));
+                }, 1000);
+            }
+        });
+
+        // ===== ИСПРАВЛЕННАЯ ПОДПИСКА НА PUSH =====
+        async function subscribeToPush() {
+            console.log('📱 Проверка поддержки уведомлений...');
             
-            console.log('✅ Service Worker зарегистрирован:', registration);
-            
-            // Ждем активации
-            await navigator.serviceWorker.ready;
-            console.log('✅ Service Worker активен');
-            
-            // Проверяем поддержку push
-            if (!registration.pushManager) {
-                console.log('❌ PushManager не поддерживается');
+            if (!('Notification' in window)) {
+                console.log('❌ Браузер не поддерживает уведомления');
                 return;
             }
             
-            // Получаем существующую подписку или создаем новую
-            let subscription = await registration.pushManager.getSubscription();
+            if (!('serviceWorker' in navigator)) {
+                console.log('❌ Service Worker не поддерживается');
+                return;
+            }
             
-            if (subscription) {
-                console.log('📦 Найдена существующая подписка');
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+            
+            try {
+                const permission = await Notification.requestPermission();
+                console.log('📱 Разрешение:', permission);
                 
-                // Проверяем, работает ли подписка
-                try {
-                    const testRes = await fetch('/api/push/status', {
-                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                    });
-                    const testData = await testRes.json();
-                    
-                    if (!testData.subscribed) {
-                        // Подписка не работает - удаляем
-                        await subscription.unsubscribe();
-                        subscription = null;
-                        console.log('🗑️ Удалена нерабочая подписка');
+                if (permission === 'granted') {
+                    // Удаляем старые Service Worker
+                    const registrations = await navigator.serviceWorker.getRegistrations();
+                    for (let registration of registrations) {
+                        await registration.unregister();
                     }
-                } catch (e) {
-                    console.log('❌ Ошибка проверки подписки');
+                    
+                    // Регистрируем новый
+                    const registration = await navigator.serviceWorker.register('/service-worker.js', {
+                        scope: '/'
+                    });
+                    
+                    console.log('✅ Service Worker зарегистрирован');
+                    
+                    await navigator.serviceWorker.ready;
+                    
+                    // Создаем подписку
+                    const base64Key = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
+                    const key = urlBase64ToUint8Array(base64Key);
+                    
+                    const subscription = await registration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: key
+                    });
+                    
+                    console.log('✅ Подписка создана');
+                    
+                    const res = await fetch('/api/push/subscribe', {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ subscription })
+                    });
+                    
+                    if (res.ok) {
+                        console.log('✅ Подписка сохранена');
+                        if (isIOS) {
+                            showIOSInstructions();
+                        }
+                    }
                 }
-            }
-            
-            if (!subscription) {
-                console.log('🆕 Создаем новую подписку...');
-                
-                // Конвертируем ключ
-                const base64Key = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
-                const key = urlBase64ToUint8Array(base64Key);
-                
-                // Создаем подписку
-                subscription = await registration.pushManager.subscribe({
-                    userVisibleOnly: true,
-                    applicationServerKey: key
-                });
-                
-                console.log('✅ Подписка создана');
-            }
-            
-            // Отправляем подписку на сервер
-            console.log('📤 Отправляем подписку на сервер...');
-            
-            const res = await fetch('/api/push/subscribe', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ subscription })
-            });
-            
-            if (res.ok) {
-                console.log('✅ Подписка сохранена на сервере');
-                
-                // Для iOS показываем инструкцию
-                if (isIOS) {
-                    showIOSInstructions();
-                }
-            } else {
-                console.log('❌ Ошибка сохранения подписки');
+            } catch (e) {
+                console.error('❌ Ошибка подписки:', e);
             }
         }
-    } catch (e) {
-        console.error('❌ Ошибка подписки на уведомления:', e);
-    }
-}
 
-// Инструкция для iOS
-function showIOSInstructions() {
-    const instructions = document.createElement('div');
-    instructions.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        right: 20px;
-        background: #2a6ee0;
-        color: white;
-        padding: 15px;
-        border-radius: 10px;
-        z-index: 1000;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-        font-size: 14px;
-        text-align: center;
-    `;
-    instructions.innerHTML = `
-        <strong>📱 Для уведомлений на iOS:</strong><br>
-        1. Нажмите "Поделиться" <span style="font-size:18px;">⎙</span><br>
-        2. Выберите "На экран «Домой»"<br>
-        3. Открывайте приложение с экрана
-        <button onclick="this.parentElement.remove()" style="margin-top:10px; padding:5px 15px; background:white; color:#2a6ee0; border:none; border-radius:5px;">OK</button>
-    `;
-    document.body.appendChild(instructions);
-}
+        function showIOSInstructions() {
+            const div = document.createElement('div');
+            div.style.cssText = `
+                position: fixed;
+                bottom: 20px;
+                left: 20px;
+                right: 20px;
+                background: #2a6ee0;
+                color: white;
+                padding: 15px;
+                border-radius: 10px;
+                z-index: 1000;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+                font-size: 14px;
+                text-align: center;
+            `;
+            div.innerHTML = `
+                <strong>📱 Для уведомлений на iOS:</strong><br>
+                1. Нажмите "Поделиться" <span style="font-size:18px;">⎙</span><br>
+                2. Выберите "На экран «Домой»"<br>
+                3. Открывайте приложение с экрана
+                <button onclick="this.parentElement.remove()" style="margin-top:10px; padding:8px 20px; background:white; color:#2a6ee0; border:none; border-radius:5px;">OK</button>
+            `;
+            document.body.appendChild(div);
+        }
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
+            const rawData = window.atob(base64);
+            const outputArray = new Uint8Array(rawData.length);
+            for (let i = 0; i < rawData.length; ++i) {
+                outputArray[i] = rawData.charCodeAt(i);
+            }
+            return outputArray;
+        }
+
+        function updateUserStatus(userId, status) {
+            // Обновляем статус в заголовке если это собеседник
+            const chatNameEl = document.getElementById('chat-name');
+            const chatStatusEl = document.getElementById('chat-status');
+            
+            if (chatNameEl.textContent.includes('Пользователь') || !chatNameEl.textContent.includes('Группа')) {
+                // Это личный чат
+                chatStatusEl.textContent = status === 'online' ? 'онлайн' : 'офлайн';
+            }
+        }
+
+        // Enter отправляет сообщение
+        document.getElementById('message-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        // Инициализация
+        if (localStorage.getItem('token')) {
+            subscribeToPush();
+        }
+
+        loadChatInfo();
+        loadMessages();
+    </script>
+</body>
+</html>
