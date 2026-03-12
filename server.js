@@ -837,6 +837,58 @@ wss.on('connection', (ws) => {
         }
     });
 });
+// УДАЛИТЬ ЧАТ
+app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
+    const { chatId } = req.params;
+
+    try {
+        // Проверяем, является ли пользователь участником
+        const participant = await pool.query(
+            'SELECT * FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+            [chatId, req.user.userId]
+        );
+
+        if (participant.rows.length === 0) {
+            return res.status(403).json({ error: 'Нет доступа к чату' });
+        }
+
+        // Удаляем чат (каскадно удалятся все сообщения и участники)
+        await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка удаления чата' });
+    }
+});
+
+// УДАЛИТЬ СООБЩЕНИЕ
+app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
+    const { messageId } = req.params;
+
+    try {
+        // Проверяем, является ли пользователь автором сообщения
+        const message = await pool.query(
+            'SELECT user_id FROM messages WHERE id = $1',
+            [messageId]
+        );
+
+        if (message.rows.length === 0) {
+            return res.status(404).json({ error: 'Сообщение не найдено' });
+        }
+
+        if (message.rows[0].user_id !== req.user.userId) {
+            return res.status(403).json({ error: 'Нельзя удалить чужое сообщение' });
+        }
+
+        await pool.query('DELETE FROM messages WHERE id = $1', [messageId]);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка удаления сообщения' });
+    }
+});
 
 // ========== ЗАПУСК ==========
 server.listen(PORT, () => {
@@ -855,5 +907,6 @@ function getLocalIP() {
     }
     return 'localhost';
 }
+
 
 
