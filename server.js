@@ -18,14 +18,14 @@ const JWT_SECRET = process.env.JWT_SECRET || 'tapok-super-secret-key-2025';
 const APP_PASSWORD = process.env.APP_PASSWORD || '123456Tapok';
 const PORT = process.env.PORT || 3000;
 
-// VAPID keys для push-уведомлений (замени на свои)
+// VAPID keys для push-уведомлений
 const vapidKeys = {
     publicKey: 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U',
     privateKey: 'UUxI4O8-FbRouAevSmBQ6o18hgE4nSG3qwvJTfKc-ls'
 };
 
 webpush.setVapidDetails(
-    'mailto:your-email@example.com',
+    'mailto:tapok@app.com',
     vapidKeys.publicKey,
     vapidKeys.privateKey
 );
@@ -42,7 +42,7 @@ app.use(express.json());
 app.use(express.static('public'));
 
 // Создаем папки
-['public', 'uploads', 'public/avatars'].forEach(dir => {
+['public', 'uploads', 'public/icons'].forEach(dir => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
@@ -60,17 +60,6 @@ async function initDb() {
                 push_subscription JSONB,
                 last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-
-        // Контакты пользователя (телефонная книга)
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS user_contacts (
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                contact_phone VARCHAR(50) NOT NULL,
-                contact_name VARCHAR(100),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, contact_phone)
             )
         `);
 
@@ -166,10 +155,6 @@ app.get('/chats.html', (req, res) => {
 
 app.get('/chat.html', (req, res) => {
     res.sendFile(__dirname + '/public/chat.html');
-});
-
-app.get('/contacts.html', (req, res) => {
-    res.sendFile(__dirname + '/public/contacts.html');
 });
 
 // ========== MIDDLEWARE ==========
@@ -284,68 +269,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// СОХРАНЕНИЕ КОНТАКТОВ ТЕЛЕФОНА
-app.post('/api/sync-contacts', authenticateToken, async (req, res) => {
-    const { contacts } = req.body; // [{ phone, name }]
-    
-    const client = await pool.connect();
-    
-    try {
-        await client.query('BEGIN');
-        
-        // Очищаем старые контакты
-        await client.query('DELETE FROM user_contacts WHERE user_id = $1', [req.user.userId]);
-        
-        // Добавляем новые
-        for (const contact of contacts) {
-            await client.query(
-                'INSERT INTO user_contacts (user_id, contact_phone, contact_name) VALUES ($1, $2, $3)',
-                [req.user.userId, contact.phone, contact.name]
-            );
-        }
-        
-        await client.query('COMMIT');
-        
-        // Возвращаем список пользователей Tapok из контактов
-        const tapokUsers = await pool.query(`
-            SELECT DISTINCT u.id, u.phone, u.name, u.avatar, u.status,
-                   uc.contact_name as saved_name
-            FROM users u
-            JOIN user_contacts uc ON u.phone = uc.contact_phone
-            WHERE uc.user_id = $1 AND u.id != $1
-        `, [req.user.userId]);
-        
-        res.json(tapokUsers.rows);
-        
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка синхронизации' });
-    } finally {
-        client.release();
-    }
-});
-
-// ПОЛУЧИТЬ КОНТАКТЫ ИЗ TAPOK (только те, кто есть в телефонной книге)
-app.get('/api/tapok-contacts', authenticateToken, async (req, res) => {
-    try {
-        const result = await pool.query(`
-            SELECT DISTINCT u.id, u.phone, u.name, u.avatar, u.status,
-                   uc.contact_name as saved_name
-            FROM users u
-            JOIN user_contacts uc ON u.phone = uc.contact_phone
-            WHERE uc.user_id = $1 AND u.id != $1
-            ORDER BY uc.contact_name
-        `, [req.user.userId]);
-        
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка получения контактов' });
-    }
-});
-
-// ПОЛУЧИТЬ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ (для поиска)
+// ПОИСК ПОЛЬЗОВАТЕЛЕЙ
 app.get('/api/users/search', authenticateToken, async (req, res) => {
     const { query } = req.query;
     
@@ -370,26 +294,7 @@ app.get('/api/users/search', authenticateToken, async (req, res) => {
     }
 });
 
-// ПОЛУЧИТЬ ИНФО О СЕБЕ
-app.get('/api/user/me', authenticateToken, async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT id, phone, name, avatar, status FROM users WHERE id = $1',
-            [req.user.userId]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Пользователь не найден' });
-        }
-
-        res.json(result.rows[0]);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка сервера' });
-    }
-});
-
-// СОЗДАТЬ ЧАТ (личный или групповой)
+// СОЗДАТЬ ЧАТ
 app.post('/api/chats', authenticateToken, async (req, res) => {
     const { name, isGroup, participants } = req.body;
     
@@ -410,20 +315,12 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
 
         const chatId = chatResult.rows[0].id;
 
-        // Первый участник - админ (создатель)
-        await client.query(
-            'INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES ($1, $2, $3)',
-            [chatId, req.user.userId, true]
-        );
-
-        // Остальные участники
-        for (const userId of participants) {
-            if (userId !== req.user.userId) {
-                await client.query(
-                    'INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES ($1, $2, $3)',
-                    [chatId, userId, false]
-                );
-            }
+        // Добавляем всех участников
+        for (const userId of allParticipants) {
+            await client.query(
+                'INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES ($1, $2, $3)',
+                [chatId, userId, userId === req.user.userId]
+            );
         }
 
         await client.query('COMMIT');
@@ -488,12 +385,12 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
         res.json(chats);
 
     } catch (err) {
-        console.error(err);
+        console.error('Ошибка получения чатов:', err);
         res.status(500).json({ error: 'Ошибка получения чатов' });
     }
 });
 
-// ПОЛУЧИТЬ ИНФО О ЧАТЕ
+// ПОЛУЧИТЬ ЧАТ
 app.get('/api/chats/:chatId', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
 
@@ -528,60 +425,26 @@ app.get('/api/chats/:chatId', authenticateToken, async (req, res) => {
     }
 });
 
-// ДОБАВИТЬ УЧАСТНИКА В ГРУППУ
-app.post('/api/chats/:chatId/participants', authenticateToken, async (req, res) => {
+// УДАЛИТЬ ЧАТ
+app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
-    const { userId } = req.body;
 
     try {
-        // Проверяем, является ли текущий пользователь админом
-        const admin = await pool.query(
-            'SELECT is_admin FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+        const participant = await pool.query(
+            'SELECT * FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
             [chatId, req.user.userId]
         );
 
-        if (admin.rows.length === 0 || !admin.rows[0].is_admin) {
-            return res.status(403).json({ error: 'Только админ может добавлять участников' });
+        if (participant.rows.length === 0) {
+            return res.status(403).json({ error: 'Нет доступа к чату' });
         }
 
-        await pool.query(
-            'INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES ($1, $2, $3)',
-            [chatId, userId, false]
-        );
+        await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
 
         res.json({ success: true });
-
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Ошибка добавления участника' });
-    }
-});
-
-// УДАЛИТЬ УЧАСТНИКА ИЗ ГРУППЫ
-app.delete('/api/chats/:chatId/participants/:userId', authenticateToken, async (req, res) => {
-    const { chatId, userId } = req.params;
-
-    try {
-        // Проверяем права
-        const admin = await pool.query(
-            'SELECT is_admin FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
-            [chatId, req.user.userId]
-        );
-
-        if (admin.rows.length === 0 || !admin.rows[0].is_admin) {
-            return res.status(403).json({ error: 'Только админ может удалять участников' });
-        }
-
-        await pool.query(
-            'DELETE FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
-            [chatId, userId]
-        );
-
-        res.json({ success: true });
-
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка удаления участника' });
+        res.status(500).json({ error: 'Ошибка удаления чата' });
     }
 });
 
@@ -617,19 +480,46 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
         res.json(result.rows.reverse());
 
     } catch (err) {
-        console.error(err);
+        console.error('Ошибка получения сообщений:', err);
         res.status(500).json({ error: 'Ошибка получения сообщений' });
     }
 });
 
-// ОТПРАВИТЬ СООБЩЕНИЕ (текст, фото, видео, голосовое)
+// УДАЛИТЬ СООБЩЕНИЕ
+app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
+    const { messageId } = req.params;
+
+    try {
+        const message = await pool.query(
+            'SELECT user_id FROM messages WHERE id = $1',
+            [messageId]
+        );
+
+        if (message.rows.length === 0) {
+            return res.status(404).json({ error: 'Сообщение не найдено' });
+        }
+
+        if (message.rows[0].user_id !== req.user.userId) {
+            return res.status(403).json({ error: 'Нельзя удалить чужое сообщение' });
+        }
+
+        await pool.query('DELETE FROM messages WHERE id = $1', [messageId]);
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка удаления сообщения' });
+    }
+});
+
+// ОТПРАВИТЬ СООБЩЕНИЕ
 app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     { name: 'photos', maxCount: 10 },
     { name: 'videos', maxCount: 5 },
     { name: 'voice', maxCount: 1 }
 ]), async (req, res) => {
     const { chatId } = req.params;
-    const { text } = req.body;
+    const { text, duration } = req.body;
     const files = req.files;
 
     const client = await pool.connect();
@@ -639,7 +529,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
 
         const messages = [];
 
-        // Обработка текста
         if (text && text.trim()) {
             const textResult = await client.query(
                 'INSERT INTO messages (chat_id, user_id, text) VALUES ($1, $2, $3) RETURNING *',
@@ -648,7 +537,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             messages.push(textResult.rows[0]);
         }
 
-        // Обработка фото
         if (files?.photos) {
             for (const photo of files.photos) {
                 const mediaUrl = `/uploads/${photo.filename}`;
@@ -660,7 +548,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             }
         }
 
-        // Обработка видео
         if (files?.videos) {
             for (const video of files.videos) {
                 const mediaUrl = `/uploads/${video.filename}`;
@@ -672,15 +559,12 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             }
         }
 
-        // Обработка голосового
         if (files?.voice) {
             const voice = files.voice[0];
             const voiceUrl = `/uploads/${voice.filename}`;
-            const duration = req.body.duration || 0;
-            
             const voiceResult = await client.query(
                 'INSERT INTO messages (chat_id, user_id, voice_url, voice_duration, media_type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-                [chatId, req.user.userId, voiceUrl, duration, 'voice']
+                [chatId, req.user.userId, voiceUrl, duration || 0, 'voice']
             );
             messages.push(voiceResult.rows[0]);
         }
@@ -703,7 +587,7 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
 
         await client.query('COMMIT');
 
-        // Получаем полные сообщения с данными пользователя
+        // Получаем полные сообщения
         const fullMessages = [];
         for (const msg of messages) {
             const fullMsg = await client.query(`
@@ -724,7 +608,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
 
         wss.clients.forEach(client => {
             if (client.readyState === WebSocket.OPEN && client.userId) {
-                // Проверяем, является ли клиент участником чата
                 const isParticipant = participants.rows.some(p => p.user_id === client.userId) || 
                                       client.userId === req.user.userId;
                 if (isParticipant) {
@@ -733,18 +616,42 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             }
         });
 
+        // Отправляем push-уведомления
+        for (const p of participants.rows) {
+            const userPush = await pool.query(
+                'SELECT push_subscription, name FROM users WHERE id = $1',
+                [p.user_id]
+            );
+            
+            if (userPush.rows[0]?.push_subscription) {
+                try {
+                    await webpush.sendNotification(
+                        userPush.rows[0].push_subscription,
+                        JSON.stringify({
+                            title: 'Новое сообщение',
+                            body: `${fullMessages[0]?.user_name || 'Кто-то'}: ${fullMessages[0]?.text || '📎 Медиа'}`,
+                            url: `/chat.html?id=${chatId}`,
+                            chatId: chatId
+                        })
+                    );
+                } catch (e) {
+                    console.error('Ошибка отправки push:', e);
+                }
+            }
+        }
+
         res.json(fullMessages);
 
     } catch (err) {
         await client.query('ROLLBACK');
-        console.error(err);
+        console.error('Ошибка отправки сообщения:', err);
         res.status(500).json({ error: 'Ошибка отправки сообщения' });
     } finally {
         client.release();
     }
 });
 
-// ПОДПИСКА НА ПУШ-УВЕДОМЛЕНИЯ
+// ПОДПИСКА НА PUSH
 app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
     const { subscription } = req.body;
 
@@ -757,20 +664,6 @@ app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Ошибка подписки' });
-    }
-});
-
-// ОТПИСКА ОТ ПУШ-УВЕДОМЛЕНИЙ
-app.post('/api/push/unsubscribe', authenticateToken, async (req, res) => {
-    try {
-        await pool.query(
-            'UPDATE users SET push_subscription = NULL WHERE id = $1',
-            [req.user.userId]
-        );
-        res.json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка отписки' });
     }
 });
 
@@ -789,7 +682,6 @@ wss.on('connection', (ws) => {
                         ['online', user.userId]
                     );
                     
-                    // Уведомляем других о смене статуса
                     wss.clients.forEach(client => {
                         if (client.readyState === WebSocket.OPEN && client.userId !== ws.userId) {
                             client.send(JSON.stringify({
@@ -824,7 +716,6 @@ wss.on('connection', (ws) => {
                 ['offline', ws.userId]
             );
             
-            // Уведомляем других о смене статуса
             wss.clients.forEach(client => {
                 if (client.readyState === WebSocket.OPEN && client.userId !== ws.userId) {
                     client.send(JSON.stringify({
@@ -837,62 +728,10 @@ wss.on('connection', (ws) => {
         }
     });
 });
-// УДАЛИТЬ ЧАТ
-app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
-    const { chatId } = req.params;
-
-    try {
-        // Проверяем, является ли пользователь участником
-        const participant = await pool.query(
-            'SELECT * FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
-            [chatId, req.user.userId]
-        );
-
-        if (participant.rows.length === 0) {
-            return res.status(403).json({ error: 'Нет доступа к чату' });
-        }
-
-        // Удаляем чат (каскадно удалятся все сообщения и участники)
-        await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка удаления чата' });
-    }
-});
-
-// УДАЛИТЬ СООБЩЕНИЕ
-app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
-    const { messageId } = req.params;
-
-    try {
-        // Проверяем, является ли пользователь автором сообщения
-        const message = await pool.query(
-            'SELECT user_id FROM messages WHERE id = $1',
-            [messageId]
-        );
-
-        if (message.rows.length === 0) {
-            return res.status(404).json({ error: 'Сообщение не найдено' });
-        }
-
-        if (message.rows[0].user_id !== req.user.userId) {
-            return res.status(403).json({ error: 'Нельзя удалить чужое сообщение' });
-        }
-
-        await pool.query('DELETE FROM messages WHERE id = $1', [messageId]);
-
-        res.json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка удаления сообщения' });
-    }
-});
 
 // ========== ЗАПУСК ==========
 server.listen(PORT, () => {
-    console.log(`\n🚀 TAPOK MESSENGER 6.0 ЗАПУЩЕН!`);
+    console.log(`\n🚀 TAPOK MESSENGER 7.0 ЗАПУЩЕН!`);
     console.log(`📱 Пароль для всех: ${APP_PASSWORD}`);
     console.log(`💻 Локально: http://localhost:${PORT}`);
     console.log(`🌐 Для телефона: http://${getLocalIP()}:${PORT}\n`);
@@ -907,6 +746,3 @@ function getLocalIP() {
     }
     return 'localhost';
 }
-
-
-
