@@ -128,6 +128,19 @@ const upload = multer({
 app.use('/uploads', express.static('uploads'));
 app.use('/avatars', express.static('public/avatars'));
 
+// Главная страница
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/public/index.html');
+});
+
+app.get('/chats.html', (req, res) => {
+    res.sendFile(__dirname + '/public/chats.html');
+});
+
+app.get('/chat.html', (req, res) => {
+    res.sendFile(__dirname + '/public/chat.html');
+});
+
 // ========== MIDDLEWARE ==========
 async function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
