@@ -39,16 +39,15 @@ async function initDb() {
     try {
         // Пользователи
         await pool.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                name VARCHAR(100) NOT NULL,
-                avatar TEXT,
-                status VARCHAR(20) DEFAULT 'offline',
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
+           CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    phone VARCHAR(50) UNIQUE NOT NULL,      // <-- ТЕПЕРЬ PHONE
+    name VARCHAR(100) NOT NULL,
+    avatar TEXT,
+    status VARCHAR(20) DEFAULT 'offline',
+    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
 
         // Чаты
         await pool.query(`
@@ -584,3 +583,4 @@ function getLocalIP() {
     return 'localhost';
 
 }
+
