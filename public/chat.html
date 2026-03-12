@@ -1,637 +1,149 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tapok · чат</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            background: #17212b;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-            color: white;
-            height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
-        .header {
-            background: #2a6ee0;
-            padding: 15px;
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        .back-btn {
-            background: transparent;
-            border: none;
-            color: white;
-            font-size: 24px;
-            cursor: pointer;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .chat-info { flex: 1; }
-        .chat-name { font-size: 18px; font-weight: bold; }
-        .chat-status { font-size: 12px; opacity: 0.8; }
-        .messages {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .message {
-            max-width: 70%;
-            padding: 8px 12px;
-            border-radius: 18px;
-            position: relative;
-            word-wrap: break-word;
-        }
-        .my-message {
-            align-self: flex-end;
-            background: #2a6ee0;
-            border-bottom-right-radius: 4px;
-        }
-        .their-message {
-            align-self: flex-start;
-            background: #242f3d;
-            border-bottom-left-radius: 4px;
-        }
-        .message-time {
-            font-size: 10px;
-            opacity: 0.6;
-            margin-top: 4px;
-            text-align: right;
-        }
-        .message-media {
-            max-width: 200px;
-            max-height: 200px;
-            border-radius: 8px;
-            margin: 4px 0;
-            cursor: pointer;
-        }
-        .message-media video {
-            max-width: 100%;
-            max-height: 200px;
-            border-radius: 8px;
-        }
-        .voice-message {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            min-width: 150px;
-        }
-        .voice-play {
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: rgba(255,255,255,0.2);
-            border: none;
-            color: white;
-            font-size: 14px;
-            cursor: pointer;
-        }
-        .voice-wave {
-            flex: 1;
-            height: 30px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 15px;
-            position: relative;
-            overflow: hidden;
-        }
-        .voice-progress {
-            position: absolute;
-            left: 0;
-            top: 0;
-            bottom: 0;
-            width: 0%;
-            background: rgba(255,255,255,0.4);
-        }
-        .voice-time {
-            font-size: 11px;
-            opacity: 0.6;
-        }
-        .input-area {
-            background: #1e2b38;
-            padding: 10px;
-        }
-        .preview-area {
-            display: flex;
-            gap: 10px;
-            overflow-x: auto;
-            padding: 10px;
-            background: #242f3d;
-            border-radius: 10px;
-            margin-bottom: 10px;
-        }
-        .preview-area.hidden { display: none; }
-        .preview-item {
-            position: relative;
-            width: 60px;
-            height: 60px;
-            flex-shrink: 0;
-        }
-        .preview-item img, .preview-item video {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            border-radius: 8px;
-        }
-        .preview-remove {
-            position: absolute;
-            top: -5px;
-            right: -5px;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #f44336;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        .input-wrapper {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        .message-input {
-            flex: 1;
-            padding: 12px;
-            background: #242f3d;
-            border: none;
-            border-radius: 20px;
-            color: white;
-            font-size: 16px;
-        }
-        .attach-btn, .voice-btn {
-            width: 45px;
-            height: 45px;
-            border-radius: 50%;
-            background: #2a6ee0;
-            border: none;
-            color: white;
-            font-size: 20px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-        .voice-btn.recording {
-            background: #f44336;
-            animation: pulse 1s infinite;
-        }
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.1); }
-            100% { transform: scale(1); }
-        }
-        .send-btn {
-            width: 45px;
-            height: 45px;
-            border-radius: 50%;
-            background: #2a6ee0;
-            border: none;
-            color: white;
-            font-size: 20px;
-            cursor: pointer;
-        }
-        .typing {
-            color: #8a9aa8;
-            font-size: 12px;
-            padding: 5px 15px;
-            font-style: italic;
-        }
-        .hidden { display: none; }
-        .error-message {
-            color: #f44336;
-            text-align: center;
-            padding: 20px;
-        }
-        .message-menu {
-            position: relative;
-            display: inline-block;
-        }
-        .delete-message {
-            position: absolute;
-            top: -10px;
-            right: -10px;
-            background: #f44336;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            font-size: 12px;
-            cursor: pointer;
-            display: none;
-        }
-        .message:hover .delete-message {
-            display: block;
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <button class="back-btn" onclick="window.location.href='/chats.html'">←</button>
-        <div class="chat-info">
-            <div class="chat-name" id="chat-name">Загрузка...</div>
-            <div class="chat-status" id="chat-status"></div>
-        </div>
-    </div>
-
-    <div class="messages" id="messages"></div>
-    <div class="typing hidden" id="typing">печатает...</div>
-
-    <div class="input-area">
-        <div class="preview-area hidden" id="preview-area"></div>
-        <div class="input-wrapper">
-            <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
-            <input type="text" class="message-input" id="message-input" placeholder="Сообщение">
-            <button class="voice-btn" id="record-btn" onclick="toggleRecording()">🎤</button>
-            <button class="send-btn" onclick="sendMessage()">📤</button>
-        </div>
-    </div>
-
-    <input type="file" id="file-input" multiple accept="image/*,video/*" style="display: none;">
-
-    <script>
-        const urlParams = new URLSearchParams(window.location.search);
-        const chatId = urlParams.get('id');
-        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-        let ws;
-
-        if (!localStorage.getItem('token')) {
-            window.location.href = '/';
-        }
-
-        if (!chatId) {
-            document.body.innerHTML = '<div class="error-message">Ошибка: не указан чат. <a href="/chats.html">Вернуться к чатам</a></div>';
-            throw new Error('Нет ID чата');
-        }
-
-        function connectWS() {
-            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(`${protocol}//${window.location.host}`);
-
-            ws.onopen = () => {
-                ws.send(JSON.stringify({
-                    type: 'auth',
-                    token: localStorage.getItem('token')
-                }));
-            };
-
-            ws.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                if (data.type === 'new_message' && data.chatId == chatId) {
-                    if (data.messages && Array.isArray(data.messages)) {
-                        data.messages.forEach(msg => addMessage(msg, msg.user_id !== currentUser.id));
-                    }
-                }
-                if (data.type === 'typing' && data.chatId == chatId && data.userId !== currentUser.id) {
-                    document.getElementById('typing').classList.toggle('hidden', !data.isTyping);
-                }
-            };
-        }
-        connectWS();
-
-        async function loadChatInfo() {
-            try {
-                const res = await fetch(`/api/chats/${chatId}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                });
-
-                if (!res.ok) throw new Error('Чат не найден');
-
-                const chat = await res.json();
-
-                if (chat.is_group) {
-                    document.getElementById('chat-name').textContent = chat.name || 'Группа';
-                    document.getElementById('chat-status').textContent = chat.participants ? `${chat.participants.length} участников` : '';
-                } else {
-                    const other = chat.participants?.find(p => p.id !== currentUser.id);
-                    if (other) {
-                        document.getElementById('chat-name').textContent = other.name || 'Пользователь';
-                        document.getElementById('chat-status').textContent = other.status === 'online' ? 'онлайн' : 'офлайн';
-                    }
-                }
-            } catch (e) {
-                console.error('Ошибка загрузки чата:', e);
-                document.getElementById('chat-name').textContent = 'Ошибка загрузки';
-            }
-        }
-
-        async function loadMessages() {
-            try {
-                const res = await fetch(`/api/chats/${chatId}/messages`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                });
-
-                if (!res.ok) throw new Error('Не удалось загрузить сообщения');
-
-                const messages = await res.json();
-                if (Array.isArray(messages)) {
-                    messages.forEach(msg => addMessage(msg, msg.user_id !== currentUser.id));
-                }
-            } catch (e) {
-                console.error('Ошибка загрузки сообщений:', e);
-            }
-        }
-
-        function addMessage(msg, isTheir) {
-            const messagesDiv = document.getElementById('messages');
+// ===== ПОЛНОСТЬЮ ЗАМЕНИТЬ функцию subscribeToPush =====
+async function subscribeToPush() {
+    console.log('📱 Проверка поддержки уведомлений...');
+    
+    // Проверка поддержки браузером
+    if (!('Notification' in window)) {
+        console.log('❌ Браузер не поддерживает уведомления');
+        return;
+    }
+    
+    if (!('serviceWorker' in navigator)) {
+        console.log('❌ Service Worker не поддерживается');
+        return;
+    }
+    
+    // Определяем iOS
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    
+    console.log(`📱 Устройство: ${isIOS ? 'iOS' : 'другое'}, Safari: ${isSafari}`);
+    
+    try {
+        // Запрашиваем разрешение
+        console.log('🔔 Запрашиваем разрешение на уведомления...');
+        const permission = await Notification.requestPermission();
+        console.log('📱 Разрешение:', permission);
+        
+        if (permission === 'granted') {
+            // Регистрируем Service Worker
+            console.log('🔄 Регистрация Service Worker...');
             
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${isTheir ? 'their-message' : 'my-message'}`;
-            messageDiv.id = `msg-${msg.id}`;
-
-            let content = '';
-            
-            if (msg.media_type === 'photo') {
-                content += `<img src="${msg.media_url}" class="message-media" onclick="window.open('${msg.media_url}')">`;
+            // Удаляем старый Service Worker если есть
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (let registration of registrations) {
+                await registration.unregister();
+                console.log('🗑️ Удален старый Service Worker');
             }
             
-            if (msg.media_type === 'video') {
-                content += `<video src="${msg.media_url}" controls class="message-media"></video>`;
-            }
+            // Регистрируем новый
+            const registration = await navigator.serviceWorker.register('/service-worker.js', {
+                scope: '/'
+            });
             
-            if (msg.voice_url) {
-                const duration = msg.voice_duration ? formatDuration(msg.voice_duration) : '0:03';
-                content += `
-                    <div class="voice-message">
-                        <button class="voice-play" onclick="playVoice('${msg.voice_url}', this)">▶️</button>
-                        <div class="voice-wave">
-                            <div class="voice-progress" style="width: 0%"></div>
-                        </div>
-                        <span class="voice-time">${duration}</span>
-                    </div>
-                `;
-            }
+            console.log('✅ Service Worker зарегистрирован:', registration);
             
-            if (msg.text) {
-                content += `<div>${msg.text}</div>`;
-            }
-
-            const time = msg.created_at ? new Date(msg.created_at).toLocaleTimeString().slice(0,5) : '';
-            content += `<div class="message-time">${time}</div>`;
-
-            if (msg.user_id === currentUser.id) {
-                content += `<button class="delete-message" onclick="deleteMessage(${msg.id})">×</button>`;
-            }
-
-            messageDiv.innerHTML = content;
-            messagesDiv.appendChild(messageDiv);
-            messagesDiv.scrollTop = messagesDiv.scrollHeight;
-        }
-
-        async function deleteMessage(messageId) {
-            if (!confirm('Удалить сообщение?')) return;
+            // Ждем активации
+            await navigator.serviceWorker.ready;
+            console.log('✅ Service Worker активен');
             
-            try {
-                const res = await fetch(`/api/messages/${messageId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
-                });
-                
-                if (res.ok) {
-                    document.getElementById(`msg-${messageId}`)?.remove();
-                }
-            } catch (e) {
-                console.error('Ошибка удаления сообщения:', e);
-            }
-        }
-
-        function formatDuration(seconds) {
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
-        }
-
-        window.playVoice = (url, btn) => {
-            const audio = new Audio(url);
-            audio.play();
-            btn.textContent = '⏸️';
-            audio.onended = () => btn.textContent = '▶️';
-        };
-
-        // ===== ФОТО/ВИДЕО =====
-        let selectedFiles = [];
-
-        document.getElementById('file-input').addEventListener('change', (e) => {
-            const files = Array.from(e.target.files);
-            selectedFiles = [...selectedFiles, ...files];
-            updatePreview();
-        });
-
-        function updatePreview() {
-            const previewArea = document.getElementById('preview-area');
-            
-            if (selectedFiles.length === 0) {
-                previewArea.classList.add('hidden');
+            // Проверяем поддержку push
+            if (!registration.pushManager) {
+                console.log('❌ PushManager не поддерживается');
                 return;
             }
-
-            previewArea.classList.remove('hidden');
-            previewArea.innerHTML = selectedFiles.map((file, index) => {
-                const url = URL.createObjectURL(file);
-                if (file.type.startsWith('image/')) {
-                    return `
-                        <div class="preview-item">
-                            <img src="${url}">
-                            <button class="preview-remove" onclick="removeFile(${index})">×</button>
-                        </div>
-                    `;
-                } else {
-                    return `
-                        <div class="preview-item">
-                            <video src="${url}"></video>
-                            <button class="preview-remove" onclick="removeFile(${index})">×</button>
-                        </div>
-                    `;
-                }
-            }).join('');
-        }
-
-        function removeFile(index) {
-            selectedFiles.splice(index, 1);
-            updatePreview();
-        }
-
-        // ===== ГОЛОСОВЫЕ =====
-        let mediaRecorder;
-        let audioChunks = [];
-        let isRecording = false;
-        let recordingStartTime;
-        let recordingTimer;
-
-        async function toggleRecording() {
-            const recordBtn = document.getElementById('record-btn');
             
-            if (!isRecording) {
+            // Получаем существующую подписку или создаем новую
+            let subscription = await registration.pushManager.getSubscription();
+            
+            if (subscription) {
+                console.log('📦 Найдена существующая подписка');
+                
+                // Проверяем, работает ли подписка
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
-                    audioChunks = [];
+                    const testRes = await fetch('/api/push/status', {
+                        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    const testData = await testRes.json();
                     
-                    mediaRecorder.ondataavailable = (e) => {
-                        audioChunks.push(e.data);
-                    };
-                    
-                    mediaRecorder.onstop = async () => {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                        const duration = Math.floor((Date.now() - recordingStartTime) / 1000);
-                        
-                        const formData = new FormData();
-                        formData.append('voice', audioBlob);
-                        formData.append('duration', duration);
-                        
-                        await fetch(`/api/chats/${chatId}/messages`, {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${localStorage.getItem('token')}`
-                            },
-                            body: formData
-                        });
-                        
-                        mediaRecorder.stream.getTracks().forEach(t => t.stop());
-                    };
-                    
-                    mediaRecorder.start();
-                    isRecording = true;
-                    recordingStartTime = Date.now();
-                    recordBtn.classList.add('recording');
-                    recordBtn.textContent = '⏹️';
-                    
-                    recordingTimer = setInterval(() => {
-                        const seconds = Math.floor((Date.now() - recordingStartTime) / 1000);
-                        if (seconds >= 60) stopRecording();
-                    }, 1000);
-                    
-                } catch (e) {
-                    alert('Нет доступа к микрофону');
-                }
-            } else {
-                stopRecording();
-            }
-        }
-
-        function stopRecording() {
-            if (mediaRecorder && isRecording) {
-                mediaRecorder.stop();
-                isRecording = false;
-                clearInterval(recordingTimer);
-                const recordBtn = document.getElementById('record-btn');
-                recordBtn.classList.remove('recording');
-                recordBtn.textContent = '🎤';
-            }
-        }
-
-        // ===== ОТПРАВКА =====
-        async function sendMessage() {
-            const input = document.getElementById('message-input');
-            const text = input.value.trim();
-            
-            if (!text && selectedFiles.length === 0) return;
-
-            const formData = new FormData();
-            
-            if (text) {
-                formData.append('text', text);
-                input.value = '';
-            }
-
-            selectedFiles.forEach(file => {
-                if (file.type.startsWith('image/')) {
-                    formData.append('photos', file);
-                } else if (file.type.startsWith('video/')) {
-                    formData.append('videos', file);
-                }
-            });
-
-            selectedFiles = [];
-            document.getElementById('preview-area').classList.add('hidden');
-            document.getElementById('preview-area').innerHTML = '';
-
-            await fetch(`/api/chats/${chatId}/messages`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('token')}`
-                },
-                body: formData
-            });
-        }
-
-        // ===== ПЕЧАТАНИЕ =====
-        let typingTimeout;
-        document.getElementById('message-input').addEventListener('input', () => {
-            if (ws && ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                    type: 'typing',
-                    chatId: parseInt(chatId),
-                    isTyping: true
-                }));
-                clearTimeout(typingTimeout);
-                typingTimeout = setTimeout(() => {
-                    ws.send(JSON.stringify({
-                        type: 'typing',
-                        chatId: parseInt(chatId),
-                        isTyping: false
-                    }));
-                }, 1000);
-            }
-        });
-
-        // ===== PUSH УВЕДОМЛЕНИЯ =====
-        async function subscribeToPush() {
-            if ('Notification' in window && 'serviceWorker' in navigator) {
-                try {
-                    const permission = await Notification.requestPermission();
-                    if (permission === 'granted') {
-                        const registration = await navigator.serviceWorker.register('/service-worker.js');
-                        const subscription = await registration.pushManager.subscribe({
-                            userVisibleOnly: true,
-                            applicationServerKey: urlBase64ToUint8Array('BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U')
-                        });
-                        
-                        await fetch('/api/push/subscribe', {
-                            method: 'POST',
-                            headers: {
-                                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({ subscription })
-                        });
+                    if (!testData.subscribed) {
+                        // Подписка не работает - удаляем
+                        await subscription.unsubscribe();
+                        subscription = null;
+                        console.log('🗑️ Удалена нерабочая подписка');
                     }
                 } catch (e) {
-                    console.error('Ошибка подписки на уведомления:', e);
+                    console.log('❌ Ошибка проверки подписки');
                 }
             }
-        }
-
-        function urlBase64ToUint8Array(base64String) {
-            const padding = '='.repeat((4 - base64String.length % 4) % 4);
-            const base64 = (base64String + padding).replace(/\-/g, '+').replace(/_/g, '/');
-            const rawData = window.atob(base64);
-            const outputArray = new Uint8Array(rawData.length);
-            for (let i = 0; i < rawData.length; ++i) {
-                outputArray[i] = rawData.charCodeAt(i);
+            
+            if (!subscription) {
+                console.log('🆕 Создаем новую подписку...');
+                
+                // Конвертируем ключ
+                const base64Key = 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U';
+                const key = urlBase64ToUint8Array(base64Key);
+                
+                // Создаем подписку
+                subscription = await registration.pushManager.subscribe({
+                    userVisibleOnly: true,
+                    applicationServerKey: key
+                });
+                
+                console.log('✅ Подписка создана');
             }
-            return outputArray;
+            
+            // Отправляем подписку на сервер
+            console.log('📤 Отправляем подписку на сервер...');
+            
+            const res = await fetch('/api/push/subscribe', {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ subscription })
+            });
+            
+            if (res.ok) {
+                console.log('✅ Подписка сохранена на сервере');
+                
+                // Для iOS показываем инструкцию
+                if (isIOS) {
+                    showIOSInstructions();
+                }
+            } else {
+                console.log('❌ Ошибка сохранения подписки');
+            }
         }
+    } catch (e) {
+        console.error('❌ Ошибка подписки на уведомления:', e);
+    }
+}
 
-        if (localStorage.getItem('token')) {
-            subscribeToPush();
-        }
-
-        loadChatInfo();
-        loadMessages();
-    </script>
-</body>
-</html>
+// Инструкция для iOS
+function showIOSInstructions() {
+    const instructions = document.createElement('div');
+    instructions.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 20px;
+        right: 20px;
+        background: #2a6ee0;
+        color: white;
+        padding: 15px;
+        border-radius: 10px;
+        z-index: 1000;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        font-size: 14px;
+        text-align: center;
+    `;
+    instructions.innerHTML = `
+        <strong>📱 Для уведомлений на iOS:</strong><br>
+        1. Нажмите "Поделиться" <span style="font-size:18px;">⎙</span><br>
+        2. Выберите "На экран «Домой»"<br>
+        3. Открывайте приложение с экрана
+        <button onclick="this.parentElement.remove()" style="margin-top:10px; padding:5px 15px; background:white; color:#2a6ee0; border:none; border-radius:5px;">OK</button>
+    `;
+    document.body.appendChild(instructions);
+}
