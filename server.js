@@ -581,6 +581,26 @@ function getLocalIP() {
         }
     }
     return 'localhost';
-
+// ВРЕМЕННО - УДАЛИТЬ ПОТОМ!
+app.get('/api/fixdb', async (req, res) => {
+    try {
+        await pool.query('DROP TABLE IF EXISTS users CASCADE');
+        await pool.query(`
+            CREATE TABLE users (
+                id SERIAL PRIMARY KEY,
+                phone VARCHAR(50) UNIQUE NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                avatar TEXT,
+                status VARCHAR(20) DEFAULT 'offline',
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        res.send('Таблица users пересоздана!');
+    } catch (err) {
+        res.send('Ошибка: ' + err.message);
+    }
+});
 }
+
 
