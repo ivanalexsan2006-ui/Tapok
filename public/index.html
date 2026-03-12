@@ -84,11 +84,23 @@
             <button id="tab-register">Регистрация</button>
         </div>
 
-       <!-- В форме входа -->
-<input type="tel" id="login-phone" placeholder="Номер телефона" value="+7" oninput="formatPhone(this)">
+        <!-- Форма входа -->
+        <div id="login-form">
+            <input type="tel" id="login-phone" placeholder="Номер телефона">
+            <button onclick="login()">Войти</button>
+        </div>
 
-       <!-- В форме регистрации -->
-<input type="tel" id="reg-phone" placeholder="Номер телефона" value="+7" oninput="formatPhone(this)">
+        <!-- Форма регистрации -->
+        <div id="register-form" class="hidden">
+            <input type="tel" id="reg-phone" placeholder="Номер телефона">
+            <input type="text" id="reg-name" placeholder="Ваше имя">
+            <input type="password" id="reg-password" placeholder="Пароль для всех">
+            <div class="file-input">
+                <input type="file" id="reg-avatar" accept="image/*">
+            </div>
+            <button onclick="register()">Зарегистрироваться</button>
+        </div>
+
         <div id="error" class="error"></div>
     </div>
 
@@ -186,13 +198,6 @@
         if (localStorage.getItem('token')) {
             window.location.href = '/chats.html';
         }
-        function formatPhone(input) {
-    let value = input.value.replace(/[^\d+]/g, '');
-    if (!value.startsWith('+')) {
-        value = '+7' + value.replace(/^\+?7?/, '');
-    }
-    input.value = value;
-}
     </script>
 </body>
 </html>
