@@ -22,7 +22,8 @@
             align-items: center;
         }
         .header h1 { font-size: 24px; }
-        .logout-btn {
+        .header-actions { display: flex; gap: 10px; }
+        .header-btn {
             background: transparent;
             border: 1px solid white;
             color: white;
@@ -69,16 +70,26 @@
             margin-right: 15px;
             font-size: 20px;
             overflow: hidden;
+            flex-shrink: 0;
         }
         .avatar img {
             width: 100%;
             height: 100%;
             object-fit: cover;
         }
-        .chat-info { flex: 1; }
+        .chat-info { flex: 1; min-width: 0; }
         .chat-name { font-weight: bold; margin-bottom: 4px; }
-        .chat-last { color: #8a9aa8; font-size: 14px; }
-        .chat-meta { text-align: right; }
+        .chat-last { 
+            color: #8a9aa8; 
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .chat-meta { 
+            text-align: right;
+            margin-left: 10px;
+        }
         .chat-time { font-size: 12px; color: #8a9aa8; }
         .unread-badge {
             background: #2a6ee0;
@@ -105,6 +116,7 @@
             border: none;
             cursor: pointer;
             box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 100;
         }
         .modal {
             position: fixed;
@@ -138,6 +150,25 @@
             color: white;
             font-size: 24px;
             cursor: pointer;
+            padding: 0 10px;
+        }
+        .tab-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .tab-btn {
+            flex: 1;
+            padding: 8px;
+            background: #17212b;
+            border: none;
+            color: #8a9aa8;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .tab-btn.active {
+            background: #2a6ee0;
+            color: white;
         }
         .user-item {
             display: flex;
@@ -146,16 +177,53 @@
             border-radius: 8px;
             cursor: pointer;
             transition: background 0.2s;
+            margin-bottom: 5px;
         }
         .user-item:hover { background: #17212b; }
+        .user-item.selected {
+            background: #2a6ee0;
+        }
+        .user-checkbox {
+            width: 20px;
+            height: 20px;
+            margin-right: 10px;
+        }
         .loading { text-align: center; padding: 20px; color: #8a9aa8; }
+        .group-input {
+            margin: 15px 0;
+        }
+        .group-input input {
+            width: 100%;
+            padding: 10px;
+            background: #17212b;
+            border: none;
+            color: white;
+            border-radius: 5px;
+        }
+        .create-btn {
+            width: 100%;
+            padding: 12px;
+            background: #2a6ee0;
+            border: none;
+            color: white;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 15px;
+        }
+        .create-btn:disabled {
+            background: #4a5a6a;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 <body>
     <div class="app">
         <div class="header">
             <h1>Tapok</h1>
-            <button class="logout-btn" onclick="logout()">Выйти</button>
+            <div class="header-actions">
+                <button class="header-btn" onclick="logout()">Выйти</button>
+            </div>
         </div>
 
         <div class="search">
@@ -176,14 +244,35 @@
                 <h3>Новый чат</h3>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
-            <input type="text" id="search-users" placeholder="Поиск по номеру или имени..." style="width:100%; padding:10px; margin-bottom:15px; background:#17212b; border:none; color:white; border-radius:5px;">
-            <div id="search-results"></div>
+            
+            <div class="tab-buttons">
+                <button class="tab-btn active" id="tab-contacts" onclick="switchTab('contacts')">Контакты</button>
+                <button class="tab-btn" id="tab-all" onclick="switchTab('all')">Все пользователи</button>
+            </div>
+
+            <div id="contacts-tab">
+                <div class="loading" id="contacts-loading">Загрузка контактов...</div>
+                <div id="contacts-list"></div>
+            </div>
+
+            <div id="all-tab" class="hidden">
+                <input type="text" id="search-users" placeholder="Поиск по номеру или имени..." style="width:100%; padding:10px; margin-bottom:15px; background:#17212b; border:none; color:white; border-radius:5px;">
+                <div id="all-users-list"></div>
+            </div>
+
+            <div class="group-input">
+                <input type="text" id="group-name" placeholder="Название группы (если несколько)">
+            </div>
+
+            <button class="create-btn" id="create-chat-btn" onclick="createChat()" disabled>Создать чат</button>
         </div>
     </div>
 
     <script>
         let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
         let ws;
+        let selectedUsers = [];
+        let tapokContacts = [];
 
         if (!localStorage.getItem('token')) {
             window.location.href = '/';
@@ -205,6 +294,9 @@
                 const data = JSON.parse(e.data);
                 if (data.type === 'new_message') {
                     loadChats();
+                }
+                if (data.type === 'user_status') {
+                    updateUserStatus(data.userId, data.status);
                 }
             };
         }
@@ -234,6 +326,11 @@
             list.innerHTML = chats.map(chat => {
                 let chatName = chat.name;
                 let avatar = '?';
+                let lastMessageText = chat.last_message || '';
+
+                if (chat.last_media_type === 'photo') lastMessageText = '📷 Фото';
+                if (chat.last_media_type === 'video') lastMessageText = '🎥 Видео';
+                if (chat.last_media_type === 'voice') lastMessageText = '🎤 Голосовое';
 
                 if (!chat.is_group && chat.participants) {
                     const other = chat.participants.find(p => p.id !== currentUser.id);
@@ -241,6 +338,8 @@
                         chatName = other.name;
                         avatar = other.avatar ? `<img src="${other.avatar}">` : other.name[0];
                     }
+                } else {
+                    avatar = '👥';
                 }
 
                 const time = chat.last_message_time ? new Date(chat.last_message_time).toLocaleTimeString().slice(0,5) : '';
@@ -250,7 +349,7 @@
                         <div class="avatar">${avatar}</div>
                         <div class="chat-info">
                             <div class="chat-name">${chatName}</div>
-                            <div class="chat-last">${chat.last_message || '...'}</div>
+                            <div class="chat-last">${lastMessageText}</div>
                         </div>
                         <div class="chat-meta">
                             <div class="chat-time">${time}</div>
@@ -261,38 +360,137 @@
             }).join('');
         }
 
-        // Поиск пользователей
-        let searchTimeout;
-        document.getElementById('search-users').addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => searchUsers(e.target.value), 300);
-        });
+        function updateUserStatus(userId, status) {
+            // Обновление статуса в интерфейсе (можно добавить позже)
+        }
 
-        async function searchUsers(query) {
-            if (!query) {
-                document.getElementById('search-results').innerHTML = '';
+        // Загрузка контактов из Tapok
+        async function loadTapokContacts() {
+            try {
+                const res = await fetch('/api/tapok-contacts', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                tapokContacts = await res.json();
+                displayContacts();
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function displayContacts() {
+            const list = document.getElementById('contacts-list');
+            
+            if (tapokContacts.length === 0) {
+                list.innerHTML = '<div class="loading">Нет знакомых в Tapok</div>';
                 return;
             }
 
-            const res = await fetch(`/api/users/search?query=${encodeURIComponent(query)}`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-            });
-            const users = await res.json();
+            list.innerHTML = tapokContacts.map(contact => {
+                const isSelected = selectedUsers.includes(contact.id);
+                return `
+                    <div class="user-item ${isSelected ? 'selected' : ''}" onclick="toggleUser(${contact.id})">
+                        <input type="checkbox" class="user-checkbox" ${isSelected ? 'checked' : ''}>
+                        <div class="avatar" style="width:40px; height:40px;">
+                            ${contact.avatar ? `<img src="${contact.avatar}">` : contact.name[0]}
+                        </div>
+                        <div style="margin-left:10px;">
+                            <div>${contact.saved_name || contact.name}</div>
+                            <div style="font-size:12px; color:#8a9aa8;">${contact.phone}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
 
-            document.getElementById('search-results').innerHTML = users.map(u => `
-                <div class="user-item" onclick="createChat(${u.id})">
-                    <div class="avatar" style="width:40px; height:40px;">
-                        ${u.avatar ? `<img src="${u.avatar}">` : u.name[0]}
-                    </div>
-                    <div style="margin-left:10px;">
-                        <div>${u.name}</div>
-                        <div style="font-size:12px; color:#8a9aa8;">${u.phone}</div>
-                    </div>
-                </div>
-            `).join('');
+            document.getElementById('contacts-loading').classList.add('hidden');
+            updateCreateButton();
         }
 
-        async function createChat(userId) {
+        // Поиск всех пользователей
+        let searchTimeout;
+        document.getElementById('search-users').addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => searchAllUsers(e.target.value), 300);
+        });
+
+        async function searchAllUsers(query) {
+            try {
+                const res = await fetch(`/api/users/search?query=${encodeURIComponent(query)}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const users = await res.json();
+                displayAllUsers(users);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function displayAllUsers(users) {
+            const list = document.getElementById('all-users-list');
+            
+            if (users.length === 0) {
+                list.innerHTML = '<div class="loading">Ничего не найдено</div>';
+                return;
+            }
+
+            list.innerHTML = users.map(user => {
+                const isSelected = selectedUsers.includes(user.id);
+                return `
+                    <div class="user-item ${isSelected ? 'selected' : ''}" onclick="toggleUser(${user.id})">
+                        <input type="checkbox" class="user-checkbox" ${isSelected ? 'checked' : ''}>
+                        <div class="avatar" style="width:40px; height:40px;">
+                            ${user.avatar ? `<img src="${user.avatar}">` : user.name[0]}
+                        </div>
+                        <div style="margin-left:10px;">
+                            <div>${user.name}</div>
+                            <div style="font-size:12px; color:#8a9aa8;">${user.phone}</div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleUser(userId) {
+            const index = selectedUsers.indexOf(userId);
+            if (index === -1) {
+                selectedUsers.push(userId);
+            } else {
+                selectedUsers.splice(index, 1);
+            }
+            
+            // Обновляем отображение
+            displayContacts();
+            if (!document.getElementById('all-tab').classList.contains('hidden')) {
+                searchAllUsers(document.getElementById('search-users').value);
+            }
+            
+            updateCreateButton();
+        }
+
+        function updateCreateButton() {
+            const btn = document.getElementById('create-chat-btn');
+            btn.disabled = selectedUsers.length === 0;
+        }
+
+        function switchTab(tab) {
+            if (tab === 'contacts') {
+                document.getElementById('tab-contacts').classList.add('active');
+                document.getElementById('tab-all').classList.remove('active');
+                document.getElementById('contacts-tab').classList.remove('hidden');
+                document.getElementById('all-tab').classList.add('hidden');
+                loadTapokContacts();
+            } else {
+                document.getElementById('tab-all').classList.add('active');
+                document.getElementById('tab-contacts').classList.remove('active');
+                document.getElementById('all-tab').classList.remove('hidden');
+                document.getElementById('contacts-tab').classList.add('hidden');
+                searchAllUsers('');
+            }
+        }
+
+        async function createChat() {
+            const groupName = document.getElementById('group-name').value;
+            const isGroup = selectedUsers.length > 1 || groupName;
+
             const res = await fetch('/api/chats', {
                 method: 'POST',
                 headers: {
@@ -300,8 +498,9 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    isGroup: false,
-                    participants: [userId]
+                    name: groupName || null,
+                    isGroup: isGroup,
+                    participants: selectedUsers
                 })
             });
 
@@ -315,14 +514,15 @@
         }
 
         function showNewChatModal() {
+            selectedUsers = [];
             document.getElementById('new-chat-modal').classList.remove('hidden');
-            document.getElementById('search-users').focus();
+            document.getElementById('group-name').value = '';
+            switchTab('contacts');
+            loadTapokContacts();
         }
 
         function closeModal() {
             document.getElementById('new-chat-modal').classList.add('hidden');
-            document.getElementById('search-results').innerHTML = '';
-            document.getElementById('search-users').value = '';
         }
 
         // Закрытие по клику на фон
