@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const { Pool } = require('pg');
-const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
@@ -15,12 +14,12 @@ const wss = new WebSocket.Server({ server });
 
 // ========== НАСТРОЙКИ ==========
 const JWT_SECRET = process.env.JWT_SECRET || 'tapok-super-secret-key-2025';
-const APP_PASSWORD = process.env.APP_PASSWORD || '123456'; // Меняй здесь пароль
+const APP_PASSWORD = process.env.APP_PASSWORD || '123456Tapok';
 const PORT = process.env.PORT || 3000;
 
-// ========== ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ==========
+// ========== ПОДКЛЮЧЕНИЕ К БАЗЕ ==========
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/tapok',
+    connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
@@ -37,19 +36,20 @@ app.use(express.static('public'));
 // ========== СОЗДАНИЕ ТАБЛИЦ ==========
 async function initDb() {
     try {
-        // Пользователи
+        // Таблица пользователей (СРАЗУ ПРАВИЛЬНАЯ!)
         await pool.query(`
-           CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    phone VARCHAR(50) UNIQUE NOT NULL,      // <-- ТЕПЕРЬ PHONE
-    name VARCHAR(100) NOT NULL,
-    avatar TEXT,
-    status VARCHAR(20) DEFAULT 'offline',
-    last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-)
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                phone VARCHAR(50) UNIQUE NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                avatar TEXT,
+                status VARCHAR(20) DEFAULT 'offline',
+                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-        // Чаты
+        // Таблица чатов
         await pool.query(`
             CREATE TABLE IF NOT EXISTS chats (
                 id SERIAL PRIMARY KEY,
@@ -83,7 +83,7 @@ async function initDb() {
             )
         `);
 
-        // Непрочитанные сообщения
+        // Непрочитанные
         await pool.query(`
             CREATE TABLE IF NOT EXISTS unread_messages (
                 user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -127,7 +127,7 @@ const upload = multer({
 app.use('/uploads', express.static('uploads'));
 app.use('/avatars', express.static('public/avatars'));
 
-// Главная страница
+// Главные страницы
 app.get('/', (req, res) => {
     res.sendFile(__dirname + '/public/index.html');
 });
@@ -162,7 +162,6 @@ async function authenticateToken(req, res, next) {
 app.post('/api/register', upload.single('avatar'), async (req, res) => {
     const { phone, name, password } = req.body;
     
-    // Проверяем пароль для всех
     if (password !== APP_PASSWORD) {
         return res.status(403).json({ error: 'Неверный пароль доступа' });
     }
@@ -172,7 +171,6 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
     }
 
     try {
-        // Проверяем, есть ли уже такой пользователь
         const existing = await pool.query(
             'SELECT id FROM users WHERE phone = $1',
             [phone]
@@ -187,9 +185,8 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
             avatar = `/avatars/${req.file.filename}`;
         }
 
-        // Создаем пользователя
         const result = await pool.query(
-            'INSERT INTO users (phone, name, avatar, status) VALUES ($1, $2, $3, $4) RETURNING *',
+            'INSERT INTO users (phone, name, avatar, status) VALUES ($1, $2, $3, $4) RETURNING id, phone, name, avatar',
             [phone, name, avatar, 'online']
         );
 
@@ -203,12 +200,7 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
         res.json({
             success: true,
             token,
-            user: {
-                id: user.id,
-                phone: user.phone,
-                name: user.name,
-                avatar: user.avatar
-            }
+            user
         });
 
     } catch (err) {
@@ -217,7 +209,7 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
     }
 });
 
-// ВХОД ПО ТЕЛЕФОНУ
+// ВХОД
 app.post('/api/login', async (req, res) => {
     const { phone } = req.body;
 
@@ -227,7 +219,7 @@ app.post('/api/login', async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT * FROM users WHERE phone = $1',
+            'SELECT id, phone, name, avatar FROM users WHERE phone = $1',
             [phone]
         );
 
@@ -237,7 +229,6 @@ app.post('/api/login', async (req, res) => {
 
         const user = result.rows[0];
 
-        // Обновляем статус
         await pool.query(
             'UPDATE users SET status = $1, last_seen = CURRENT_TIMESTAMP WHERE id = $2',
             ['online', user.id]
@@ -252,12 +243,7 @@ app.post('/api/login', async (req, res) => {
         res.json({
             success: true,
             token,
-            user: {
-                id: user.id,
-                phone: user.phone,
-                name: user.name,
-                avatar: user.avatar
-            }
+            user
         });
 
     } catch (err) {
@@ -265,11 +251,12 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
+
 // ПОЛУЧИТЬ ИНФО О СЕБЕ
 app.get('/api/user/me', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, username, name, avatar, status, last_seen FROM users WHERE id = $1',
+            'SELECT id, phone, name, avatar, status FROM users WHERE id = $1',
             [req.user.userId]
         );
 
@@ -292,7 +279,7 @@ app.get('/api/users/search', authenticateToken, async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT id, username, name, avatar, status FROM users WHERE (username ILIKE $1 OR name ILIKE $1) AND id != $2 LIMIT 20',
+            'SELECT id, phone, name, avatar, status FROM users WHERE (phone ILIKE $1 OR name ILIKE $1) AND id != $2 LIMIT 20',
             [`%${query}%`, req.user.userId]
         );
 
@@ -312,13 +299,11 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
     }
 
     const allParticipants = [...new Set([req.user.userId, ...participants])];
-
     const client = await pool.connect();
 
     try {
         await client.query('BEGIN');
 
-        // Создаем чат
         const chatResult = await client.query(
             'INSERT INTO chats (name, is_group, created_by) VALUES ($1, $2, $3) RETURNING id',
             [name || null, isGroup || false, req.user.userId]
@@ -326,7 +311,6 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
 
         const chatId = chatResult.rows[0].id;
 
-        // Добавляем участников
         for (const userId of allParticipants) {
             await client.query(
                 'INSERT INTO chat_participants (chat_id, user_id) VALUES ($1, $2)',
@@ -336,12 +320,7 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
 
         await client.query('COMMIT');
 
-        res.json({ 
-            id: chatId, 
-            name, 
-            isGroup: !!isGroup,
-            participants: allParticipants 
-        });
+        res.json({ id: chatId, name, isGroup: !!isGroup });
 
     } catch (err) {
         await client.query('ROLLBACK');
@@ -381,10 +360,9 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
 
         const chats = result.rows;
 
-        // Для каждого чата получаем участников
         for (let chat of chats) {
             const participants = await pool.query(`
-                SELECT u.id, u.username, u.name, u.avatar, u.status
+                SELECT u.id, u.phone, u.name, u.avatar, u.status
                 FROM users u
                 JOIN chat_participants cp ON u.id = cp.user_id
                 WHERE cp.chat_id = $1
@@ -407,7 +385,6 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
     const { limit = 50 } = req.query;
 
     try {
-        // Проверяем доступ
         const access = await pool.query(
             'SELECT * FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
             [chatId, req.user.userId]
@@ -418,7 +395,7 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
         }
 
         const result = await pool.query(`
-            SELECT m.*, u.name as user_name, u.username, u.avatar
+            SELECT m.*, u.name as user_name, u.phone, u.avatar
             FROM messages m
             JOIN users u ON m.user_id = u.id
             WHERE m.chat_id = $1
@@ -426,7 +403,6 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
             LIMIT $2
         `, [chatId, limit]);
 
-        // Отмечаем как прочитанные
         await pool.query(
             'DELETE FROM unread_messages WHERE chat_id = $1 AND user_id = $2',
             [chatId, req.user.userId]
@@ -465,22 +441,18 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     try {
         await client.query('BEGIN');
 
-        // Сохраняем сообщение
         const messageResult = await client.query(
-            `INSERT INTO messages (chat_id, user_id, text, media_url, media_type)
-             VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+            'INSERT INTO messages (chat_id, user_id, text, media_url, media_type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
             [chatId, req.user.userId, text, mediaUrl, mediaType]
         );
 
         const message = messageResult.rows[0];
 
-        // Получаем всех участников чата
         const participants = await client.query(
             'SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2',
             [chatId, req.user.userId]
         );
 
-        // Добавляем непрочитанные
         for (const p of participants.rows) {
             await client.query(
                 'INSERT INTO unread_messages (user_id, chat_id, message_id) VALUES ($1, $2, $3)',
@@ -488,9 +460,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             );
         }
 
-        // Получаем полное сообщение с данными пользователя
         const fullMessage = await client.query(`
-            SELECT m.*, u.name as user_name, u.username, u.avatar
+            SELECT m.*, u.name as user_name, u.phone, u.avatar
             FROM messages m
             JOIN users u ON m.user_id = u.id
             WHERE m.id = $1
@@ -498,7 +469,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
 
         await client.query('COMMIT');
 
-        // Рассылаем через WebSocket
         const wsMessage = JSON.stringify({
             type: 'new_message',
             chatId: parseInt(chatId),
@@ -532,7 +502,6 @@ wss.on('connection', (ws) => {
                 try {
                     const user = jwt.verify(msg.token, JWT_SECRET);
                     ws.userId = user.userId;
-                    
                     await pool.query(
                         'UPDATE users SET status = $1, last_seen = CURRENT_TIMESTAMP WHERE id = $2',
                         ['online', user.userId]
@@ -581,26 +550,4 @@ function getLocalIP() {
         }
     }
     return 'localhost';
-// ВРЕМЕННО - УДАЛИТЬ ПОТОМ!
-app.get('/api/fixdb', async (req, res) => {
-    try {
-        await pool.query('DROP TABLE IF EXISTS users CASCADE');
-        await pool.query(`
-            CREATE TABLE users (
-                id SERIAL PRIMARY KEY,
-                phone VARCHAR(50) UNIQUE NOT NULL,
-                name VARCHAR(100) NOT NULL,
-                avatar TEXT,
-                status VARCHAR(20) DEFAULT 'offline',
-                last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        `);
-        res.send('Таблица users пересоздана!');
-    } catch (err) {
-        res.send('Ошибка: ' + err.message);
-    }
-});
 }
-
-
