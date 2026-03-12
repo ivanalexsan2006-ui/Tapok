@@ -77,16 +77,19 @@
             <button id="tab-register">Регистрация</button>
         </div>
 
-        <!-- Форма входа -->
-        <div id="login-form">
-            <input type="text" id="login-username" placeholder="Имя пользователя">
-            <button onclick="login()">Войти</button>
-        </div>
-
        <!-- Форма входа -->
 <div id="login-form">
-    <input type="tel" id="login-phone" placeholder="Номер телефона" value="+7">
+    <input type="tel" id="login-phone" placeholder="Номер телефона">
     <button onclick="login()">Войти</button>
+</div>
+
+<!-- Форма регистрации -->
+<div id="register-form" class="hidden">
+    <input type="tel" id="reg-phone" placeholder="Номер телефона">
+    <input type="text" id="reg-name" placeholder="Ваше имя">
+    <input type="password" id="reg-password" placeholder="Пароль для всех">
+    <input type="file" id="reg-avatar" accept="image/*">
+    <button onclick="register()">Зарегистрироваться</button>
 </div>
 
 <!-- Форма регистрации -->
