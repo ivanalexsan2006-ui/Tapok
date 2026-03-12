@@ -854,4 +854,14 @@ function getLocalIP() {
         }
     }
     return 'localhost';
+    // ВРЕМЕННО - добавить колонку is_admin
+app.get('/api/fix-db', async (req, res) => {
+    try {
+        await pool.query('ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT false');
+        res.send('База починена!');
+    } catch (err) {
+        res.send('Ошибка: ' + err.message);
+    }
+});
 }
+
