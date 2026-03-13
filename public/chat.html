@@ -12,10 +12,61 @@
             -webkit-tap-highlight-color: transparent;
         }
         
-        body {
+        /* ===== ТЕМНАЯ ТЕМА ===== */
+        body.dark {
             background: #17212b;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             color: white;
+        }
+        body.dark .header { background: #2a6ee0; }
+        body.dark .their-message { background: #242f3d; }
+        body.dark .input-area { background: #1e2b38; border-top-color: #2a3b4a; }
+        body.dark .message-input { background: #242f3d; color: white; }
+        body.dark .preview-area { background: #242f3d; }
+        body.dark .voice-play { background: rgba(255,255,255,0.2); }
+        body.dark .typing { color: #8a9aa8; }
+        
+        /* ===== СВЕТЛАЯ ТЕМА ===== */
+        body.light {
+            background: #f5f5f5;
+            color: #000000;
+        }
+        body.light .header { background: #2a6ee0; color: white; }
+        body.light .their-message { 
+            background: #e5e5ea; 
+            color: #000000;
+        }
+        body.light .my-message { 
+            background: #2a6ee0; 
+            color: white;
+        }
+        body.light .input-area { 
+            background: white; 
+            border-top: 1px solid #ddd;
+        }
+        body.light .message-input { 
+            background: #f0f0f0; 
+            color: #000000;
+            border: 1px solid #ddd;
+        }
+        body.light .preview-area { 
+            background: #f0f0f0; 
+            color: #000000;
+        }
+        body.light .voice-play { 
+            background: rgba(0,0,0,0.1); 
+            color: #000000;
+        }
+        body.light .typing { color: #666; }
+        body.light .message-time { opacity: 0.5; }
+        body.light .attach-btn, 
+        body.light .voice-btn,
+        body.light .send-btn { 
+            background: #2a6ee0; 
+            color: white;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             height: 100dvh;
             height: -webkit-fill-available;
             display: flex;
@@ -27,10 +78,10 @@
             left: 0;
             right: 0;
             bottom: 0;
+            transition: background 0.3s, color 0.3s;
         }
         
         .header {
-            background: #2a6ee0;
             padding: max(15px, env(safe-area-inset-top)) 15px 15px 15px;
             display: flex;
             align-items: center;
@@ -38,6 +89,7 @@
             flex-shrink: 0;
             padding-top: constant(safe-area-inset-top, 15px);
             padding-top: env(safe-area-inset-top, 15px);
+            transition: background 0.3s;
         }
         
         .back-btn {
@@ -110,13 +162,20 @@
         .my-message {
             align-self: flex-end;
             background: #2a6ee0;
+            color: white;
             border-bottom-right-radius: 4px;
         }
         
         .their-message {
             align-self: flex-start;
-            background: #242f3d;
             border-bottom-left-radius: 4px;
+        }
+        
+        .message-sender {
+            font-size: 12px;
+            font-weight: bold;
+            margin-bottom: 4px;
+            color: #2a6ee0;
         }
         
         .message-time {
@@ -151,9 +210,7 @@
             width: 44px;
             height: 44px;
             border-radius: 50%;
-            background: rgba(255,255,255,0.2);
             border: none;
-            color: white;
             font-size: 18px;
             cursor: pointer;
             flex-shrink: 0;
@@ -161,12 +218,13 @@
             align-items: center;
             justify-content: center;
             -webkit-tap-highlight-color: transparent;
+            transition: background 0.3s;
         }
         
         .voice-wave {
             flex: 1;
             height: 36px;
-            background: rgba(255,255,255,0.2);
+            background: rgba(128,128,128,0.2);
             border-radius: 18px;
             position: relative;
             overflow: hidden;
@@ -178,7 +236,7 @@
             top: 0;
             bottom: 0;
             width: 0%;
-            background: rgba(255,255,255,0.4);
+            background: rgba(42,110,224,0.5);
             transition: width 0.1s linear;
         }
         
@@ -190,13 +248,13 @@
         }
         
         .input-area {
-            background: #1e2b38;
             padding: 10px;
-            border-top: 1px solid #2a3b4a;
+            border-top: 1px solid transparent;
             flex-shrink: 0;
             width: 100%;
             padding-bottom: max(10px, env(safe-area-inset-bottom));
             padding-bottom: constant(safe-area-inset-bottom, 10px);
+            transition: background 0.3s, border-color 0.3s;
         }
 
         .preview-area {
@@ -204,11 +262,11 @@
             gap: 10px;
             overflow-x: auto;
             padding: 10px;
-            background: #242f3d;
             border-radius: 12px;
             margin-bottom: 10px;
             flex-wrap: nowrap;
             -webkit-overflow-scrolling: touch;
+            transition: background 0.3s;
         }
 
         .preview-area.hidden { 
@@ -263,14 +321,13 @@
             flex: 1;
             min-width: 0;
             padding: 14px 16px;
-            background: #242f3d;
             border: none;
             border-radius: 30px;
-            color: white;
             font-size: 16px;
             outline: none;
             -webkit-appearance: none;
             height: 48px;
+            transition: background 0.3s, color 0.3s, border 0.3s;
         }
 
         .message-input:focus {
@@ -283,9 +340,7 @@
             width: 48px;
             height: 48px;
             border-radius: 50%;
-            background: #2a6ee0;
             border: none;
-            color: white;
             font-size: 22px;
             cursor: pointer;
             display: flex;
@@ -302,11 +357,10 @@
         .voice-btn:active,
         .send-btn:active {
             transform: scale(0.95);
-            background: #1e4fa0;
         }
 
         .voice-btn.recording {
-            background: #f44336;
+            background: #f44336 !important;
             animation: pulse 1s infinite;
         }
 
@@ -317,11 +371,11 @@
         }
 
         .typing {
-            color: #8a9aa8;
             font-size: 12px;
             padding: 5px 15px;
             font-style: italic;
             flex-shrink: 0;
+            transition: color 0.3s;
         }
         
         .hidden { display: none; }
@@ -390,7 +444,7 @@
         }
     </style>
 </head>
-<body>
+<body class="dark">
     <div class="header">
         <button class="back-btn" onclick="window.location.href='/chats.html'">←</button>
         <div class="chat-info">
@@ -437,6 +491,10 @@
             throw new Error('Нет ID чата');
         }
 
+        // Загружаем тему
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.body.className = savedTheme;
+
         // ===== WEBSOCKET =====
         function connectWS() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -482,14 +540,13 @@
                 const chat = await res.json();
 
                 if (chat.is_group) {
-                    // Для группы - название ведет в профиль группы
                     document.getElementById('chat-name').innerHTML = `<a href="/group-profile.html?id=${chat.id}" style="color: white; text-decoration: none;">${chat.name || 'Группа'}</a>`;
                     document.getElementById('chat-status').textContent = chat.participants ? `${chat.participants.length} участников` : '';
                 } else {
                     const other = chat.participants?.find(p => p.id !== currentUser.id);
                     if (other) {
-                        // Для личного чата - имя ведет в профиль пользователя
-                        document.getElementById('chat-name').innerHTML = `<a href="/user-profile.html?id=${other.id}" style="color: white; text-decoration: none;">${other.name || 'Пользователь'}</a>`;
+                        const displayName = other.displayName || other.name;
+                        document.getElementById('chat-name').innerHTML = `<a href="/user-profile.html?id=${other.id}" style="color: white; text-decoration: none;">${displayName}</a>`;
                         document.getElementById('chat-status').textContent = other.status === 'online' ? 'онлайн' : 'офлайн';
                     }
                 }
@@ -526,6 +583,13 @@
             messageDiv.id = `msg-${msg.id}`;
 
             let content = '';
+            
+            // Добавляем имя отправителя для групповых чатов
+            if (isTheir && msg.custom_name) {
+                content += `<div class="message-sender">${msg.custom_name}</div>`;
+            } else if (isTheir && msg.user_name) {
+                content += `<div class="message-sender">${msg.user_name}</div>`;
+            }
             
             if (msg.media_type === 'photo') {
                 content += `<img src="${msg.media_url}" class="message-media" onclick="window.open('${msg.media_url}')">`;
