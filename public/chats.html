@@ -24,6 +24,11 @@
         body.dark .search-input { background: #17212b; color: white; }
         body.dark .tab-btn { color: #8a9aa8; }
         body.dark .tab-btn.active { color: #2a6ee0; border-bottom-color: #2a6ee0; }
+        body.dark .settings-btn { 
+            background: transparent; 
+            border: 1px solid white; 
+            color: white; 
+        }
         
         /* ===== СВЕТЛАЯ ТЕМА ===== */
         body.light {
@@ -54,6 +59,15 @@
         body.light .no-results { color: #666; }
         body.light .close-btn { color: #000000; }
         body.light .create-btn { color: white; }
+        body.light .settings-btn,
+        body.light .profile-btn { 
+            border-color: white; 
+            color: white; 
+        }
+        body.light .settings-btn:hover,
+        body.light .profile-btn:hover { 
+            background: rgba(255,255,255,0.1); 
+        }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -73,7 +87,12 @@
         }
         .header h1 { font-size: 24px; }
         
-        .settings-btn {
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .profile-btn, .settings-btn {
             background: transparent;
             border: 1px solid white;
             color: white;
@@ -85,42 +104,13 @@
             align-items: center;
             gap: 5px;
             text-decoration: none;
+            transition: background 0.2s;
         }
-        .header-buttons {
-    display: flex;
-    gap: 10px;
-}
-
-.profile-btn, .settings-btn {
-    background: transparent;
-    border: 1px solid white;
-    color: white;
-    padding: 8px 15px;
-    border-radius: 20px;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    text-decoration: none;
-    transition: background 0.2s;
-}
-
-.profile-btn:hover, .settings-btn:hover {
-    background: rgba(255,255,255,0.1);
-}
-
-/* Для светлой темы */
-body.light .profile-btn,
-body.light .settings-btn {
-    border-color: #2a6ee0;
-    color: #2a6ee0;
-}
-
-body.light .profile-btn:hover,
-body.light .settings-btn:hover {
-    background: rgba(42,110,224,0.1);
-}
+        
+        .profile-btn:hover, .settings-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
         .search {
             padding: 10px;
         }
@@ -367,16 +357,21 @@ body.light .settings-btn:hover {
 <body class="dark">
     <div class="app">
         <div class="header">
-    <h1>Tapok</h1>
-    <div style="display: flex; gap: 10px;">
-        <a href="/profile.html" class="settings-btn" style="background: transparent; border: 1px solid white; color: white; padding: 8px 15px; border-radius: 20px; text-decoration: none; display: flex; align-items: center; gap: 5px;">
-            👤 Профиль
-        </a>
-        <a href="/settings.html" class="settings-btn" style="background: transparent; border: 1px solid white; color: white; padding: 8px 15px; border-radius: 20px; text-decoration: none; display: flex; align-items: center; gap: 5px;">
-            ⚙️ Настройки
-        </a>
-    </div>
-</div>
+            <h1>Tapok</h1>
+            <div class="header-buttons">
+                <a href="/profile.html" class="profile-btn">
+                    👤 Профиль
+                </a>
+                <a href="/settings.html" class="settings-btn">
+                    ⚙️ Настройки
+                </a>
+            </div>
+        </div>
+
+        <div class="search">
+            <input type="text" id="search-input" placeholder="Поиск по чатам..." autocomplete="off">
+        </div>
+
         <!-- Результаты поиска -->
         <div class="search-results" id="search-results"></div>
 
@@ -459,29 +454,48 @@ body.light .settings-btn:hover {
 
         // ===== ЗАГРУЗКА ЧАТОВ =====
         async function loadChats() {
+            const list = document.getElementById('chats-list');
+            
             try {
+                console.log('Загружаем чаты...');
                 const res = await fetch('/api/chats', {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
                 
-                if (!res.ok) throw new Error('Ошибка загрузки');
+                console.log('Статус ответа:', res.status);
+                
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        window.location.href = '/';
+                        return;
+                    }
+                    throw new Error(`Ошибка ${res.status}`);
+                }
                 
                 const chats = await res.json();
+                console.log('Получены чаты:', chats);
+                
+                if (!chats || chats.length === 0) {
+                    list.innerHTML = '<div class="loading">Нет чатов. Нажми + чтобы начать</div>';
+                    return;
+                }
+                
                 displayChats(chats);
             } catch (e) {
-                console.error('Ошибка загрузки чатов:', e);
-                document.getElementById('chats-list').innerHTML = '<div class="loading">Ошибка загрузки</div>';
+                console.error('❌ Ошибка загрузки чатов:', e);
+                list.innerHTML = `
+                    <div class="loading" style="color: #f44336;">
+                        Ошибка загрузки<br>
+                        <small>${e.message}</small><br>
+                        <button onclick="loadChats()" style="margin-top:10px; padding:8px 20px; background:#2a6ee0; border:none; color:white; border-radius:5px;">🔄 Повторить</button>
+                    </div>
+                `;
             }
         }
 
         function displayChats(chats) {
             const list = document.getElementById('chats-list');
             
-            if (!chats || chats.length === 0) {
-                list.innerHTML = '<div class="loading">Нет чатов. Нажми + чтобы начать</div>';
-                return;
-            }
-
             list.innerHTML = chats.map(chat => {
                 let chatName = chat.name;
                 let avatar = '?';
@@ -571,7 +585,6 @@ body.light .settings-btn:hover {
 
         // ===== ТАБЫ =====
         function switchTab(tabName) {
-            // Обновляем классы табов
             document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
             
@@ -700,7 +713,7 @@ body.light .settings-btn:hover {
 
             list.innerHTML = users.map(user => `
                 <div class="user-item" onclick="toggleGroupUser(${user.id})">
-                    <input type="checkbox" class="user-checkbox" id="user-${user.id}">
+                    <input type="checkbox" class="user-checkbox" id="user-${user.id}" onclick="event.stopPropagation()">
                     <div class="avatar" style="width:40px; height:40px; margin-right:10px;">
                         ${user.avatar ? `<img src="${user.avatar}">` : (user.name ? user.name[0] : '?')}
                     </div>
@@ -804,9 +817,22 @@ body.light .settings-btn:hover {
             }
         });
 
+        // Для отладки
+        async function testAPI() {
+            try {
+                const res = await fetch('/api/chats', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                console.log('🔍 Тест API:', res.status);
+                const data = await res.json();
+                console.log('📦 Данные:', data);
+            } catch (e) {
+                console.error('❌ Тест API ошибка:', e);
+            }
+        }
+        testAPI();
+
         loadChats();
     </script>
 </body>
 </html>
-
-
