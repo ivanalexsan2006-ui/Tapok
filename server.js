@@ -100,7 +100,7 @@ async function initDb() {
             )
         `);
 
-        // Сообщения (с поддержкой ответов)
+        // Сообщения (базовая таблица)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS messages (
                 id SERIAL PRIMARY KEY,
@@ -111,10 +111,128 @@ async function initDb() {
                 media_type VARCHAR(20),
                 voice_url TEXT,
                 voice_duration INTEGER,
-                reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
+
+        // Непрочитанные
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS unread_messages (
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
+                message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, chat_id, message_id)
+            )
+        `);
+
+        // Контакты пользователя
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_contacts (
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                contact_phone VARCHAR(50) NOT NULL,
+                contact_name VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, contact_phone)
+            )
+        `);
+
+        // Переименования контактов
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS contact_renames (
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                contact_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                custom_name VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, contact_user_id)
+            )
+        `);
+
+        // История чатов
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS chat_history (
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
+                last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, chat_id)
+            )
+        `);
+
+        // Закрепленные сообщения
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS pinned_messages (
+                id SERIAL PRIMARY KEY,
+                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
+                message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+                pinned_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(chat_id, message_id)
+            )
+        `);
+
+        // Права администраторов в группах
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS admin_permissions (
+                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                can_add_admins BOOLEAN DEFAULT false,
+                can_manage_users BOOLEAN DEFAULT false,
+                can_delete_messages BOOLEAN DEFAULT false,
+                can_change_info BOOLEAN DEFAULT false,
+                can_pin_messages BOOLEAN DEFAULT true,
+                PRIMARY KEY (chat_id, user_id)
+            )
+        `);
+
+        console.log('✅ Базовая структура таблиц готова');
+
+        // ===== ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ =====
+        
+        // Добавляем колонку reply_to в messages
+        try {
+            await pool.query(`
+                DO $$ 
+                BEGIN 
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                  WHERE table_name='messages' AND column_name='reply_to') THEN
+                        ALTER TABLE messages ADD COLUMN reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL;
+                        RAISE NOTICE 'Колонка reply_to добавлена';
+                    END IF;
+                END $$;
+            `);
+            console.log('✅ Колонка reply_to проверена/добавлена');
+        } catch (err) {
+            console.log('⚠️ Ошибка при добавлении reply_to:', err.message);
+        }
+
+        // Добавляем другие поля если их нет
+        try {
+            await pool.query(`
+                DO $$ 
+                BEGIN 
+                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                                  WHERE table_name='users' AND column_name='hide_phone') THEN
+                        ALTER TABLE users 
+                        ADD COLUMN hide_phone BOOLEAN DEFAULT false,
+                        ADD COLUMN hide_status BOOLEAN DEFAULT false,
+                        ADD COLUMN hide_avatar BOOLEAN DEFAULT false,
+                        ADD COLUMN who_can_write VARCHAR(20) DEFAULT 'all',
+                        ADD COLUMN theme VARCHAR(10) DEFAULT 'dark';
+                    END IF;
+                END $$;
+            `);
+            console.log('✅ Дополнительные поля пользователя проверены');
+        } catch (err) {
+            console.log('⚠️ Ошибка при добавлении полей пользователя:', err.message);
+        }
+
+        console.log('✅ Все таблицы обновлены полностью');
+
+    } catch (err) {
+        console.error('❌ Ошибка создания таблиц:', err);
+    }
+}
 
         // Непрочитанные
         await pool.query(`
@@ -1529,3 +1647,4 @@ function getLocalIP() {
     }
     return 'localhost';
 }
+
