@@ -24,6 +24,9 @@
         body.dark .preview-area { background: #242f3d; }
         body.dark .voice-play { background: rgba(255,255,255,0.2); }
         body.dark .typing { color: #8a9aa8; }
+        body.dark .context-menu { background: #242f3d; border: 1px solid #1e2b38; }
+        body.dark .context-menu-item:hover { background: #1e2b38; }
+        body.dark .pinned-messages { background: #1e2b38; }
         
         /* ===== СВЕТЛАЯ ТЕМА ===== */
         body.light {
@@ -64,6 +67,13 @@
             background: #2a6ee0; 
             color: white;
         }
+        body.light .context-menu { 
+            background: white; 
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        body.light .context-menu-item:hover { background: #f0f0f0; }
+        body.light .pinned-messages { background: #e5e5ea; }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -90,6 +100,7 @@
             padding-top: constant(safe-area-inset-top, 15px);
             padding-top: env(safe-area-inset-top, 15px);
             transition: background 0.3s;
+            z-index: 10;
         }
         
         .back-btn {
@@ -134,6 +145,70 @@
             opacity: 0.8;
         }
         
+        /* ===== ЗАКРЕПЛЕННЫЕ СООБЩЕНИЯ ===== */
+        .pinned-messages {
+            padding: 10px 15px;
+            border-bottom: 1px solid rgba(128,128,128,0.2);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .pinned-icon {
+            font-size: 18px;
+            opacity: 0.7;
+        }
+        .pinned-preview {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 14px;
+        }
+        .pinned-count {
+            font-size: 12px;
+            opacity: 0.7;
+        }
+        .pinned-list {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+            background: inherit;
+        }
+        .pinned-list.expanded {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .pinned-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 15px;
+            border-bottom: 1px solid rgba(128,128,128,0.1);
+            font-size: 13px;
+        }
+        .pinned-item:last-child {
+            border-bottom: none;
+        }
+        .pinned-item-author {
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .pinned-item-text {
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .unpin-btn {
+            background: transparent;
+            border: none;
+            color: #f44336;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 5px;
+        }
+        
         .messages {
             flex: 1;
             overflow-y: auto;
@@ -143,6 +218,73 @@
             gap: 8px;
             -webkit-overflow-scrolling: touch;
             scroll-behavior: smooth;
+            position: relative;
+        }
+        
+        /* Затемнение фона */
+        .message-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 998;
+            display: none;
+            animation: fadeIn 0.2s;
+        }
+        
+        .message-overlay.active {
+            display: block;
+        }
+        
+        /* Выделенное сообщение */
+        .message.highlighted {
+            position: relative;
+            z-index: 999;
+            box-shadow: 0 0 0 3px #2a6ee0, 0 4px 15px rgba(0,0,0,0.5);
+            transition: box-shadow 0.2s;
+        }
+        
+        /* Контекстное меню */
+        .context-menu {
+            position: fixed;
+            background: inherit;
+            border-radius: 12px;
+            padding: 8px 0;
+            min-width: 200px;
+            z-index: 1000;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            display: none;
+            animation: slideUp 0.2s;
+        }
+        
+        .context-menu.show {
+            display: block;
+        }
+        
+        .context-menu-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: background 0.2s;
+            font-size: 16px;
+        }
+        
+        .context-menu-item.delete-item {
+            color: #f44336;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes slideUp {
+            from { transform: translateY(10px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
         
         .message {
@@ -152,6 +294,13 @@
             position: relative;
             word-wrap: break-word;
             animation: fadeIn 0.2s;
+            transition: all 0.2s;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        
+        .message:active {
+            transform: scale(0.98);
         }
         
         @keyframes fadeIn {
@@ -183,6 +332,26 @@
             opacity: 0.6;
             margin-top: 4px;
             text-align: right;
+        }
+        
+        /* Цитата ответа */
+        .reply-quote {
+            background: rgba(0,0,0,0.1);
+            border-left: 3px solid #2a6ee0;
+            padding: 6px 10px;
+            margin-bottom: 6px;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .reply-author {
+            font-weight: bold;
+            margin-bottom: 2px;
+        }
+        .reply-text {
+            opacity: 0.8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         
         .message-media {
@@ -255,6 +424,7 @@
             padding-bottom: max(10px, env(safe-area-inset-bottom));
             padding-bottom: constant(safe-area-inset-bottom, 10px);
             transition: background 0.3s, border-color 0.3s;
+            z-index: 10;
         }
 
         .preview-area {
@@ -385,30 +555,6 @@
             text-align: center;
             padding: 20px;
         }
-        
-        .delete-message {
-            position: absolute;
-            top: -8px;
-            right: -8px;
-            background: #f44336;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 28px;
-            height: 28px;
-            font-size: 18px;
-            cursor: pointer;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 10;
-            -webkit-tap-highlight-color: transparent;
-        }
-        
-        .message:hover .delete-message,
-        .message:active .delete-message {
-            display: flex;
-        }
 
         @media (max-width: 480px) {
             .message {
@@ -437,10 +583,6 @@
             .message-input {
                 font-size: 16px;
             }
-            
-            .delete-message {
-                display: flex;
-            }
         }
     </style>
 </head>
@@ -450,6 +592,38 @@
         <div class="chat-info">
             <div class="chat-name" id="chat-name">Загрузка...</div>
             <div class="chat-status" id="chat-status"></div>
+        </div>
+    </div>
+
+    <!-- Блок закрепленных сообщений -->
+    <div id="pinned-container" style="display: none;">
+        <div class="pinned-messages" onclick="togglePinnedList()">
+            <span class="pinned-icon">📌</span>
+            <span class="pinned-preview" id="pinned-preview"></span>
+            <span class="pinned-count" id="pinned-count"></span>
+        </div>
+        <div class="pinned-list" id="pinned-list"></div>
+    </div>
+
+    <!-- Затемнение -->
+    <div class="message-overlay" id="message-overlay" onclick="closeContextMenu()"></div>
+
+    <!-- Контекстное меню -->
+    <div class="context-menu" id="context-menu">
+        <div class="context-menu-item" onclick="copyMessage()">
+            <span>📋</span> Копировать
+        </div>
+        <div class="context-menu-item" onclick="replyToMessage()">
+            <span>↩️</span> Ответить
+        </div>
+        <div class="context-menu-item" onclick="forwardMessage()">
+            <span>🔁</span> Переслать
+        </div>
+        <div class="context-menu-item" id="pin-menu-item" onclick="pinMessage()">
+            <span>📌</span> Закрепить
+        </div>
+        <div class="context-menu-item delete-item" id="delete-menu-item" onclick="deleteMessage()">
+            <span>🗑️</span> Удалить
         </div>
     </div>
 
@@ -466,6 +640,7 @@
         </div>
     </div>
 
+    <!-- Скрытый инпут для файлов -->
     <input type="file" id="file-input" multiple accept="image/*,video/*" style="display: none;">
 
     <script>
@@ -481,6 +656,12 @@
         let recordingStartTime;
         let recordingTimer;
         let typingTimeout;
+
+        // Для контекстного меню
+        let selectedMessage = null;
+        let selectedMessageElement = null;
+        let canPin = false;
+        let isGroup = false;
 
         if (!localStorage.getItem('token')) {
             window.location.href = '/';
@@ -520,6 +701,9 @@
                 if (data.type === 'user_status') {
                     updateUserStatus(data.userId, data.status);
                 }
+                if (data.type === 'pins_updated' && data.chatId == chatId) {
+                    updatePinnedMessages(data.pins);
+                }
             };
 
             ws.onclose = () => {
@@ -538,10 +722,15 @@
                 if (!res.ok) throw new Error('Чат не найден');
 
                 const chat = await res.json();
+                isGroup = chat.is_group;
 
                 if (chat.is_group) {
                     document.getElementById('chat-name').innerHTML = `<a href="/group-profile.html?id=${chat.id}" style="color: white; text-decoration: none;">${chat.name || 'Группа'}</a>`;
                     document.getElementById('chat-status').textContent = chat.participants ? `${chat.participants.length} участников` : '';
+                    
+                    // Проверяем права на закрепление (для групп)
+                    const currentUserInGroup = chat.participants.find(p => p.id === currentUser.id);
+                    canPin = currentUserInGroup?.is_admin || false;
                 } else {
                     const other = chat.participants?.find(p => p.id !== currentUser.id);
                     if (other) {
@@ -549,10 +738,87 @@
                         document.getElementById('chat-name').innerHTML = `<a href="/user-profile.html?id=${other.id}" style="color: white; text-decoration: none;">${displayName}</a>`;
                         document.getElementById('chat-status').textContent = other.status === 'online' ? 'онлайн' : 'офлайн';
                     }
+                    // В личке закреплять может кто угодно
+                    canPin = true;
                 }
+
+                // Загружаем закрепленные
+                loadPinnedMessages();
+
             } catch (e) {
                 console.error('Ошибка загрузки чата:', e);
                 document.getElementById('chat-name').textContent = 'Ошибка загрузки';
+            }
+        }
+
+        // ===== ЗАКРЕПЛЕННЫЕ СООБЩЕНИЯ =====
+        async function loadPinnedMessages() {
+            try {
+                const res = await fetch(`/api/chats/${chatId}/pins`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                
+                const pins = await res.json();
+                updatePinnedMessages(pins);
+            } catch (e) {
+                console.error('Ошибка загрузки закрепленных:', e);
+            }
+        }
+
+        function updatePinnedMessages(pins) {
+            const container = document.getElementById('pinned-container');
+            
+            if (!pins || pins.length === 0) {
+                container.style.display = 'none';
+                return;
+            }
+
+            container.style.display = 'block';
+            
+            // Превью
+            const preview = document.getElementById('pinned-preview');
+            const firstPin = pins[0];
+            preview.textContent = firstPin.text || 
+                (firstPin.media_type === 'photo' ? '📷 Фото' : 
+                 firstPin.media_type === 'video' ? '🎥 Видео' : 
+                 firstPin.voice_url ? '🎤 Голосовое' : 'Сообщение');
+            
+            document.getElementById('pinned-count').textContent = `${pins.length}`;
+
+            // Список
+            const list = document.getElementById('pinned-list');
+            list.innerHTML = pins.map(pin => `
+                <div class="pinned-item">
+                    <span class="pinned-item-author">${pin.user_name}:</span>
+                    <span class="pinned-item-text">${pin.text || 
+                        (pin.media_type === 'photo' ? '📷 Фото' : 
+                         pin.media_type === 'video' ? '🎥 Видео' : 
+                         pin.voice_url ? '🎤 Голосовое' : '')}</span>
+                    ${canPin ? `<button class="unpin-btn" onclick="unpinMessage(${pin.message_id})">✕</button>` : ''}
+                </div>
+            `).join('');
+        }
+
+        function togglePinnedList() {
+            document.getElementById('pinned-list').classList.toggle('expanded');
+        }
+
+        async function unpinMessage(messageId) {
+            try {
+                const res = await fetch(`/api/messages/${messageId}/pin?chatId=${chatId}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ chatId })
+                });
+
+                if (res.ok) {
+                    loadPinnedMessages();
+                }
+            } catch (e) {
+                console.error('Ошибка открепления:', e);
             }
         }
 
@@ -581,14 +847,45 @@
             const messageDiv = document.createElement('div');
             messageDiv.className = `message ${isTheir ? 'their-message' : 'my-message'}`;
             messageDiv.id = `msg-${msg.id}`;
+            messageDiv.setAttribute('data-message-id', msg.id);
+            messageDiv.setAttribute('data-user-id', msg.user_id);
+            messageDiv.setAttribute('data-text', msg.text || '');
+            
+            // Добавляем обработчики событий
+            messageDiv.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showContextMenu(e, msg);
+            });
+            
+            messageDiv.addEventListener('touchstart', (e) => {
+                window.contextMenuTimer = setTimeout(() => {
+                    showContextMenu(e, msg);
+                }, 500);
+            });
+            
+            messageDiv.addEventListener('touchend', () => {
+                clearTimeout(window.contextMenuTimer);
+            });
+            
+            messageDiv.addEventListener('touchmove', () => {
+                clearTimeout(window.contextMenuTimer);
+            });
 
             let content = '';
             
+            // Цитата ответа (если есть)
+            if (msg.reply_to) {
+                content += `
+                    <div class="reply-quote">
+                        <div class="reply-author">${msg.reply_to.user_name}</div>
+                        <div class="reply-text">${msg.reply_to.text || 'Медиа'}</div>
+                    </div>
+                `;
+            }
+            
             // Добавляем имя отправителя для групповых чатов
-            if (isTheir && msg.custom_name) {
-                content += `<div class="message-sender">${msg.custom_name}</div>`;
-            } else if (isTheir && msg.user_name) {
-                content += `<div class="message-sender">${msg.user_name}</div>`;
+            if (isTheir && isGroup) {
+                content += `<div class="message-sender">${msg.custom_name || msg.user_name}</div>`;
             }
             
             if (msg.media_type === 'photo') {
@@ -619,69 +916,142 @@
             const time = msg.created_at ? new Date(msg.created_at).toLocaleTimeString().slice(0,5) : '';
             content += `<div class="message-time">${time}</div>`;
 
-            if (msg.user_id === currentUser.id) {
-                content += `<button class="delete-message" onclick="deleteMessage(${msg.id})">×</button>`;
-            }
-
             messageDiv.innerHTML = content;
             messagesDiv.appendChild(messageDiv);
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // ===== УДАЛЕНИЕ СООБЩЕНИЯ =====
-        async function deleteMessage(messageId) {
-            if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-                setTimeout(async () => {
-                    const confirmed = confirm('Удалить сообщение?');
-                    if (confirmed) {
-                        await performDelete(messageId);
-                    }
-                }, 50);
-            } else {
-                if (confirm('Удалить сообщение?')) {
-                    await performDelete(messageId);
-                }
-            }
+        // ===== КОНТЕКСТНОЕ МЕНЮ =====
+        function showContextMenu(event, message) {
+            event.preventDefault();
+            
+            selectedMessage = message;
+            selectedMessageElement = document.getElementById(`msg-${message.id}`);
+            
+            // Подсвечиваем сообщение и затемняем фон
+            document.querySelectorAll('.message').forEach(m => m.classList.remove('highlighted'));
+            selectedMessageElement.classList.add('highlighted');
+            document.getElementById('message-overlay').classList.add('active');
+            
+            // Настраиваем пункты меню
+            document.getElementById('pin-menu-item').style.display = canPin ? 'flex' : 'none';
+            document.getElementById('delete-menu-item').style.display = 
+                message.user_id === currentUser.id ? 'flex' : 'none';
+            
+            // Позиционируем меню
+            const menu = document.getElementById('context-menu');
+            const x = event.type === 'touchstart' ? event.touches[0].clientX : event.clientX;
+            const y = event.type === 'touchstart' ? event.touches[0].clientY : event.clientY;
+            
+            menu.style.left = x + 'px';
+            menu.style.top = y + 'px';
+            menu.classList.add('show');
         }
 
-        async function performDelete(messageId) {
+        function closeContextMenu() {
+            document.querySelectorAll('.message').forEach(m => m.classList.remove('highlighted'));
+            document.getElementById('message-overlay').classList.remove('active');
+            document.getElementById('context-menu').classList.remove('show');
+            selectedMessage = null;
+            selectedMessageElement = null;
+        }
+
+        // Действия меню
+        function copyMessage() {
+            if (selectedMessage?.text) {
+                navigator.clipboard.writeText(selectedMessage.text);
+                showToast('Скопировано');
+            }
+            closeContextMenu();
+        }
+
+        function replyToMessage() {
+            // TODO: реализовать ответ
+            console.log('Ответ на сообщение', selectedMessage);
+            closeContextMenu();
+        }
+
+        function forwardMessage() {
+            // TODO: реализовать пересылку
+            console.log('Переслать сообщение', selectedMessage);
+            closeContextMenu();
+        }
+
+        async function pinMessage() {
+            if (!selectedMessage) return;
+            
             try {
-                const res = await fetch(`/api/messages/${messageId}`, {
-                    method: 'DELETE',
+                const res = await fetch(`/api/messages/${selectedMessage.id}/pin`, {
+                    method: 'POST',
                     headers: {
                         'Authorization': `Bearer ${localStorage.getItem('token')}`,
                         'Content-Type': 'application/json'
-                    }
+                    },
+                    body: JSON.stringify({ chatId })
                 });
                 
                 if (res.ok) {
-                    const msgElement = document.getElementById(`msg-${messageId}`);
-                    if (msgElement) {
-                        msgElement.style.opacity = '0';
-                        msgElement.style.transform = 'scale(0.8)';
-                        msgElement.style.transition = 'all 0.2s';
-                        
-                        setTimeout(() => {
-                            msgElement.remove();
-                        }, 200);
-                    }
-                } else {
-                    const error = await res.json();
-                    alert('Ошибка: ' + (error.error || 'Не удалось удалить сообщение'));
+                    showToast('Сообщение закреплено');
                 }
             } catch (e) {
-                console.error('Ошибка удаления сообщения:', e);
-                alert('Ошибка соединения с сервером');
+                console.error('Ошибка закрепления:', e);
             }
+            
+            closeContextMenu();
         }
 
+        async function deleteMessage() {
+            if (!selectedMessage || selectedMessage.user_id !== currentUser.id) return;
+            
+            if (!confirm('Удалить сообщение?')) return;
+            
+            try {
+                const res = await fetch(`/api/messages/${selectedMessage.id}`, {
+                    method: 'DELETE',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                
+                if (res.ok && selectedMessageElement) {
+                    selectedMessageElement.style.opacity = '0';
+                    selectedMessageElement.style.transform = 'scale(0.8)';
+                    setTimeout(() => selectedMessageElement.remove(), 200);
+                }
+            } catch (e) {
+                console.error('Ошибка удаления:', e);
+            }
+            
+            closeContextMenu();
+        }
+
+        // Вспомогательная функция
+        function showToast(text) {
+            const toast = document.createElement('div');
+            toast.textContent = text;
+            toast.style.cssText = `
+                position: fixed;
+                bottom: 50px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #2a6ee0;
+                color: white;
+                padding: 10px 20px;
+                border-radius: 20px;
+                z-index: 1001;
+                animation: fadeIn 0.2s;
+            `;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 2000);
+        }
+
+        // ===== ОСТАЛЬНЫЕ ФУНКЦИИ (БЕЗ ИЗМЕНЕНИЙ) =====
         function formatDuration(seconds) {
             const mins = Math.floor(seconds / 60);
             const secs = seconds % 60;
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
 
-        // ===== ГОЛОСОВЫЕ =====
         window.playVoice = (url, btn) => {
             if (audioPlayers[url]) {
                 audioPlayers[url].pause();
@@ -715,7 +1085,6 @@
             btn.textContent = '⏸️';
         };
 
-        // ===== ФОТО/ВИДЕО =====
         document.getElementById('file-input').addEventListener('change', (e) => {
             const files = Array.from(e.target.files);
             
@@ -767,7 +1136,6 @@
             updatePreview();
         }
 
-        // ===== ГОЛОСОВАЯ ЗАПИСЬ =====
         async function toggleRecording() {
             const recordBtn = document.getElementById('record-btn');
             
@@ -876,7 +1244,6 @@
             }
         }
 
-        // ===== ОТПРАВКА СООБЩЕНИЯ =====
         async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value.trim();
@@ -921,7 +1288,6 @@
             }
         }
 
-        // ===== ПЕЧАТАНИЕ =====
         document.getElementById('message-input').addEventListener('input', () => {
             if (ws && ws.readyState === WebSocket.OPEN) {
                 ws.send(JSON.stringify({
@@ -947,7 +1313,6 @@
             }
         });
 
-        // ===== PUSH УВЕДОМЛЕНИЯ =====
         async function subscribeToPush() {
             if (!('Notification' in window)) return;
             if (!('serviceWorker' in navigator)) return;
@@ -1046,6 +1411,13 @@
 
         loadChatInfo();
         loadMessages();
+
+        // Закрытие меню при клике вне
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.context-menu') && !e.target.closest('.message')) {
+                closeContextMenu();
+            }
+        });
 
         window.addEventListener('load', () => {
             if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
