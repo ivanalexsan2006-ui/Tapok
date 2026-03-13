@@ -58,17 +58,23 @@ app.use((req, res, next) => {
 // ========== СОЗДАНИЕ ТАБЛИЦ ==========
 async function initDb() {
     try {
-        // Пользователи (базовая таблица)
+        // Пользователи
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 phone VARCHAR(50) UNIQUE NOT NULL,
                 name VARCHAR(100) NOT NULL,
+                username VARCHAR(50) UNIQUE,
                 avatar TEXT,
                 status VARCHAR(20) DEFAULT 'offline',
                 push_subscription JSONB,
                 last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                hide_phone BOOLEAN DEFAULT false,
+                hide_status BOOLEAN DEFAULT false,
+                hide_avatar BOOLEAN DEFAULT false,
+                who_can_write VARCHAR(20) DEFAULT 'all',
+                theme VARCHAR(10) DEFAULT 'dark'
             )
         `);
 
@@ -120,7 +126,7 @@ async function initDb() {
             )
         `);
 
-        // Контакты пользователя
+        // Контакты пользователя (из телефонной книги)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS user_contacts (
                 user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -131,57 +137,29 @@ async function initDb() {
             )
         `);
 
-        console.log('✅ Базовая структура таблиц готова');
+        // Переименования контактов (только для себя)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS contact_renames (
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                contact_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                custom_name VARCHAR(100) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, contact_user_id)
+            )
+        `);
 
-        // ========== ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ (ЕСЛИ ИХ НЕТ) ==========
-        try {
-            // Добавляем username
-            await pool.query(`
-                ALTER TABLE users 
-                ADD COLUMN IF NOT EXISTS username VARCHAR(50) UNIQUE
-            `);
-            console.log('✅ Поле username добавлено');
+        // История переписки (для определения, с кем общался)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS chat_history (
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
+                last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, chat_id)
+            )
+        `);
 
-            // Добавляем hide_phone
-            await pool.query(`
-                ALTER TABLE users 
-                ADD COLUMN IF NOT EXISTS hide_phone BOOLEAN DEFAULT false
-            `);
-            console.log('✅ Поле hide_phone добавлено');
-
-            // Добавляем hide_status
-            await pool.query(`
-                ALTER TABLE users 
-                ADD COLUMN IF NOT EXISTS hide_status BOOLEAN DEFAULT false
-            `);
-            console.log('✅ Поле hide_status добавлено');
-
-            // Добавляем hide_avatar
-            await pool.query(`
-                ALTER TABLE users 
-                ADD COLUMN IF NOT EXISTS hide_avatar BOOLEAN DEFAULT false
-            `);
-            console.log('✅ Поле hide_avatar добавлено');
-
-            // Добавляем who_can_write
-            await pool.query(`
-                ALTER TABLE users 
-                ADD COLUMN IF NOT EXISTS who_can_write VARCHAR(20) DEFAULT 'all'
-            `);
-            console.log('✅ Поле who_can_write добавлено');
-
-            // Добавляем theme
-            await pool.query(`
-                ALTER TABLE users 
-                ADD COLUMN IF NOT EXISTS theme VARCHAR(10) DEFAULT 'dark'
-            `);
-            console.log('✅ Поле theme добавлено');
-
-        } catch (err) {
-            console.error('❌ Ошибка при добавлении новых полей:', err.message);
-        }
-
-        console.log('✅ Все таблицы обновлены полностью');
+        console.log('✅ База данных готова');
 
     } catch (err) {
         console.error('❌ Ошибка создания таблиц:', err);
@@ -260,10 +238,6 @@ app.get('/group-profile.html', (req, res) => {
     res.sendFile(__dirname + '/public/group-profile.html');
 });
 
-app.get('/contacts.html', (req, res) => {
-    res.sendFile(__dirname + '/public/contacts.html');
-});
-
 app.get('/settings.html', (req, res) => {
     res.sendFile(__dirname + '/public/settings.html');
 });
@@ -299,7 +273,6 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
     }
 
     try {
-        // Проверка на уникальность username
         if (username) {
             const usernameExists = await pool.query(
                 'SELECT id FROM users WHERE username = $1',
@@ -325,7 +298,7 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
         }
 
         const result = await pool.query(
-            'INSERT INTO users (phone, name, username, avatar, status) VALUES ($1, $2, $3, $4, $5) RETURNING id, phone, name, username, avatar',
+            'INSERT INTO users (phone, name, username, avatar, status) VALUES ($1, $2, $3, $4, $5) RETURNING id, phone, name, username, avatar, theme',
             [phone, name, username || null, avatar, 'online']
         );
 
@@ -392,7 +365,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 // ========== КОНТАКТЫ ==========
-// Синхронизация контактов
+// Синхронизация контактов с телефонной книги
 app.post('/api/contacts/sync', authenticateToken, async (req, res) => {
     const { contacts } = req.body;
     
@@ -420,9 +393,11 @@ app.post('/api/contacts/sync', authenticateToken, async (req, res) => {
         
         const tapokContacts = await pool.query(`
             SELECT u.id, u.phone, u.name, u.username, u.avatar, u.status,
-                   uc.contact_name
+                   uc.contact_name,
+                   cr.custom_name
             FROM user_contacts uc
             JOIN users u ON u.phone = uc.contact_phone
+            LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
             WHERE uc.user_id = $1
         `, [req.user.userId]);
         
@@ -442,17 +417,102 @@ app.get('/api/contacts', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT u.id, u.phone, u.name, u.username, u.avatar, u.status,
-                   uc.contact_name
+                   uc.contact_name,
+                   cr.custom_name
             FROM user_contacts uc
             JOIN users u ON u.phone = uc.contact_phone
+            LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
             WHERE uc.user_id = $1
-            ORDER BY uc.contact_name, u.name
+            ORDER BY COALESCE(cr.custom_name, uc.contact_name, u.name)
         `, [req.user.userId]);
         
         res.json(result.rows);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Ошибка получения контактов' });
+    }
+});
+
+// Получить список людей для создания группы (контакты + те, с кем общался)
+app.get('/api/group-candidates', authenticateToken, async (req, res) => {
+    try {
+        // Контакты в Tapok
+        const contacts = await pool.query(`
+            SELECT DISTINCT u.id, u.phone, u.name, u.username, u.avatar,
+                   'contact' as source,
+                   cr.custom_name
+            FROM user_contacts uc
+            JOIN users u ON u.phone = uc.contact_phone
+            LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
+            WHERE uc.user_id = $1
+        `, [req.user.userId]);
+        
+        // Люди, с которыми есть чаты (исключаем тех, кто уже в контактах)
+        const chatted = await pool.query(`
+            SELECT DISTINCT u.id, u.phone, u.name, u.username, u.avatar,
+                   'chatted' as source,
+                   cr.custom_name
+            FROM chat_participants cp1
+            JOIN chats c ON cp1.chat_id = c.id AND c.is_group = false
+            JOIN chat_participants cp2 ON c.id = cp2.chat_id AND cp2.user_id != $1
+            JOIN users u ON cp2.user_id = u.id
+            LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
+            WHERE cp1.user_id = $1
+            AND NOT EXISTS (
+                SELECT 1 FROM user_contacts uc 
+                WHERE uc.user_id = $1 AND uc.contact_phone = u.phone
+            )
+        `, [req.user.userId]);
+        
+        // Объединяем и убираем дубликаты
+        const allUsers = [...contacts.rows, ...chatted.rows];
+        const uniqueUsers = Array.from(new Map(allUsers.map(u => [u.id, u])).values());
+        
+        res.json(uniqueUsers);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка получения кандидатов' });
+    }
+});
+
+// ========== ПЕРЕИМЕНОВАНИЕ КОНТАКТОВ ==========
+// Переименовать контакт (только для себя)
+app.put('/api/contacts/rename', authenticateToken, async (req, res) => {
+    const { contactUserId, customName } = req.body;
+    
+    if (!contactUserId || !customName) {
+        return res.status(400).json({ error: 'Не все данные' });
+    }
+    
+    try {
+        await pool.query(`
+            INSERT INTO contact_renames (user_id, contact_user_id, custom_name, updated_at)
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id, contact_user_id) 
+            DO UPDATE SET custom_name = $3, updated_at = CURRENT_TIMESTAMP
+        `, [req.user.userId, contactUserId, customName]);
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка переименования' });
+    }
+});
+
+// Удалить переименование (вернуть оригинальное имя)
+app.delete('/api/contacts/rename', authenticateToken, async (req, res) => {
+    const { contactUserId } = req.body;
+    
+    try {
+        await pool.query(
+            'DELETE FROM contact_renames WHERE user_id = $1 AND contact_user_id = $2',
+            [req.user.userId, contactUserId]
+        );
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка удаления переименования' });
     }
 });
 
@@ -500,7 +560,7 @@ app.put('/api/users/username', authenticateToken, async (req, res) => {
     const { username } = req.body;
     
     if (!username || !username.match(/^[a-zA-Z0-9_]{3,20}$/)) {
-        return res.status(400).json({ error: 'Некорректный username (только буквы, цифры и _, от 3 до 20 символов)' });
+        return res.status(400).json({ error: 'Некорректный username' });
     }
     
     try {
@@ -529,7 +589,7 @@ app.put('/api/users/username', authenticateToken, async (req, res) => {
 app.get('/api/users/me', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, phone, name, username, avatar, status, last_seen FROM users WHERE id = $1',
+            'SELECT id, phone, name, username, avatar, status, theme, last_seen FROM users WHERE id = $1',
             [req.user.userId]
         );
         
@@ -636,24 +696,37 @@ app.get('/api/users/:userId', authenticateToken, async (req, res) => {
         
         const user = result.rows[0];
         
-        const chatExists = await pool.query(`
+        // Проверяем, есть ли чат с сообщениями
+        const chatWithMessages = await pool.query(`
             SELECT c.id FROM chats c
             JOIN chat_participants cp1 ON c.id = cp1.chat_id
             JOIN chat_participants cp2 ON c.id = cp2.chat_id
             WHERE c.is_group = false
             AND cp1.user_id = $1
             AND cp2.user_id = $2
+            AND EXISTS (
+                SELECT 1 FROM messages m 
+                WHERE m.chat_id = c.id 
+                LIMIT 1
+            )
         `, [req.user.userId, userId]);
+        
+        // Проверяем, переименован ли контакт
+        const rename = await pool.query(
+            'SELECT custom_name FROM contact_renames WHERE user_id = $1 AND contact_user_id = $2',
+            [req.user.userId, userId]
+        );
         
         const responseUser = {
             id: user.id,
             name: user.name,
+            customName: rename.rows[0]?.custom_name || null,
             username: user.username,
             avatar: user.hide_avatar ? null : user.avatar,
             status: user.hide_status ? 'hidden' : user.status,
             phone: user.hide_phone ? null : user.phone,
             who_can_write: user.who_can_write,
-            existing_chat_id: chatExists.rows[0]?.id || null
+            existing_chat_id: chatWithMessages.rows[0]?.id || null
         };
         
         res.json(responseUser);
@@ -663,7 +736,8 @@ app.get('/api/users/:userId', authenticateToken, async (req, res) => {
     }
 });
 
-// ПОЛУЧИТЬ ЧАТЫ
+// ========== ЧАТЫ ==========
+// ПОЛУЧИТЬ ЧАТЫ (только с сообщениями)
 app.get('/api/chats', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(`
@@ -691,6 +765,11 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
             FROM chats c
             JOIN chat_participants cp ON c.id = cp.chat_id
             WHERE cp.user_id = $1
+            AND EXISTS (
+                SELECT 1 FROM messages m 
+                WHERE m.chat_id = c.id 
+                LIMIT 1
+            )
             GROUP BY c.id
             ORDER BY last_message_time DESC NULLS LAST
         `, [req.user.userId]);
@@ -701,14 +780,17 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
             const participants = await pool.query(`
                 SELECT u.id, u.phone, u.name, u.username, u.avatar, u.status,
                        u.hide_phone, u.hide_status, u.hide_avatar,
-                       cp.is_admin
+                       cp.is_admin,
+                       cr.custom_name
                 FROM users u
                 JOIN chat_participants cp ON u.id = cp.user_id
-                WHERE cp.chat_id = $1
-            `, [chat.id]);
+                LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
+                WHERE cp.chat_id = $2
+            `, [req.user.userId, chat.id]);
 
             chat.participants = participants.rows.map(p => ({
                 ...p,
+                displayName: p.custom_name || p.name,
                 phone: p.hide_phone ? null : p.phone,
                 status: p.hide_status ? 'hidden' : p.status,
                 avatar: p.hide_avatar ? null : p.avatar
@@ -723,27 +805,12 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
     }
 });
 
-// СОЗДАТЬ ЧАТ
+// СОЗДАТЬ ЧАТ (без создания чата, если нет сообщения)
 app.post('/api/chats', authenticateToken, async (req, res) => {
     const { name, isGroup, participants } = req.body;
     
     if (!participants || !participants.length) {
         return res.status(400).json({ error: 'Нужны участники' });
-    }
-
-    if (!isGroup && participants.length === 1) {
-        const existingChat = await pool.query(`
-            SELECT c.id FROM chats c
-            JOIN chat_participants cp1 ON c.id = cp1.chat_id
-            JOIN chat_participants cp2 ON c.id = cp2.chat_id
-            WHERE c.is_group = false
-            AND cp1.user_id = $1
-            AND cp2.user_id = $2
-        `, [req.user.userId, participants[0]]);
-        
-        if (existingChat.rows.length > 0) {
-            return res.json({ id: existingChat.rows[0].id, existing: true });
-        }
     }
 
     const allParticipants = [...new Set([req.user.userId, ...participants])];
@@ -768,7 +835,7 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
 
         await client.query('COMMIT');
 
-        res.json({ id: chatId, name, isGroup: !!isGroup, existing: false });
+        res.json({ id: chatId, name, isGroup: !!isGroup });
 
     } catch (err) {
         await client.query('ROLLBACK');
@@ -790,15 +857,22 @@ app.get('/api/chats/search', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(`
             SELECT DISTINCT c.id, c.is_group, c.name as group_name,
-                   u.id as user_id, u.name as user_name, u.username, u.avatar
+                   u.id as user_id, u.name as user_name, u.username, u.avatar,
+                   cr.custom_name
             FROM chats c
             JOIN chat_participants cp ON c.id = cp.chat_id
             JOIN users u ON cp.user_id = u.id
+            LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
             WHERE c.id IN (
                 SELECT chat_id FROM chat_participants WHERE user_id = $1
             )
             AND u.id != $1
-            AND (u.name ILIKE $2 OR u.username ILIKE $2)
+            AND (u.name ILIKE $2 OR u.username ILIKE $2 OR cr.custom_name ILIKE $2)
+            AND EXISTS (
+                SELECT 1 FROM messages m 
+                WHERE m.chat_id = c.id 
+                LIMIT 1
+            )
             ORDER BY u.name
             LIMIT 20
         `, [req.user.userId, `%${query}%`]);
@@ -820,7 +894,7 @@ app.get('/api/chats/search', authenticateToken, async (req, res) => {
                     chats.push({
                         id: row.id,
                         type: 'user',
-                        name: row.user_name,
+                        name: row.custom_name || row.user_name,
                         username: row.username,
                         avatar: row.avatar,
                         userId: row.user_id
@@ -851,16 +925,21 @@ app.get('/api/chats/:chatId', authenticateToken, async (req, res) => {
         }
 
         const participants = await pool.query(`
-            SELECT u.id, u.phone, u.name, u.avatar, u.status,
-                   cp.is_admin
+            SELECT u.id, u.phone, u.name, u.username, u.avatar, u.status,
+                   cp.is_admin,
+                   cr.custom_name
             FROM users u
             JOIN chat_participants cp ON u.id = cp.user_id
-            WHERE cp.chat_id = $1
-        `, [chatId]);
+            LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
+            WHERE cp.chat_id = $2
+        `, [req.user.userId, chatId]);
 
         const result = {
             ...chat.rows[0],
-            participants: participants.rows
+            participants: participants.rows.map(p => ({
+                ...p,
+                displayName: p.custom_name || p.name
+            }))
         };
 
         res.json(result);
@@ -910,13 +989,15 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
         }
 
         const result = await pool.query(`
-            SELECT m.*, u.name as user_name, u.phone, u.avatar
+            SELECT m.*, u.name as user_name, u.phone, u.avatar,
+                   cr.custom_name
             FROM messages m
             JOIN users u ON m.user_id = u.id
-            WHERE m.chat_id = $1
+            LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
+            WHERE m.chat_id = $2
             ORDER BY m.created_at DESC
-            LIMIT $2
-        `, [chatId, limit]);
+            LIMIT $3
+        `, [req.user.userId, chatId, limit]);
 
         await pool.query(
             'DELETE FROM unread_messages WHERE chat_id = $1 AND user_id = $2',
@@ -958,7 +1039,7 @@ app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
     }
 });
 
-// ОТПРАВКА СООБЩЕНИЙ
+// ОТПРАВКА СООБЩЕНИЙ (с записью в chat_history)
 app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     { name: 'photos', maxCount: 10 },
     { name: 'videos', maxCount: 5 },
@@ -1029,16 +1110,35 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             }
         }
 
+        // Обновляем историю чата
+        await client.query(`
+            INSERT INTO chat_history (user_id, chat_id, last_message_at)
+            VALUES ($1, $2, CURRENT_TIMESTAMP)
+            ON CONFLICT (user_id, chat_id) 
+            DO UPDATE SET last_message_at = CURRENT_TIMESTAMP
+        `, [req.user.userId, chatId]);
+
+        for (const p of participants.rows) {
+            await client.query(`
+                INSERT INTO chat_history (user_id, chat_id, last_message_at)
+                VALUES ($1, $2, CURRENT_TIMESTAMP)
+                ON CONFLICT (user_id, chat_id) 
+                DO UPDATE SET last_message_at = CURRENT_TIMESTAMP
+            `, [p.user_id, chatId]);
+        }
+
         await client.query('COMMIT');
 
         const fullMessages = [];
         for (const msg of messages) {
             const fullMsg = await client.query(`
-                SELECT m.*, u.name as user_name, u.phone, u.avatar
+                SELECT m.*, u.name as user_name, u.phone, u.avatar,
+                       cr.custom_name
                 FROM messages m
                 JOIN users u ON m.user_id = u.id
-                WHERE m.id = $1
-            `, [msg.id]);
+                LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
+                WHERE m.id = $2
+            `, [req.user.userId, msg.id]);
             fullMessages.push(fullMsg.rows[0]);
         }
 
@@ -1058,6 +1158,7 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             }
         });
 
+        // PUSH-УВЕДОМЛЕНИЯ
         for (const p of participants.rows) {
             const userPush = await pool.query(
                 'SELECT push_subscription, name FROM users WHERE id = $1',
