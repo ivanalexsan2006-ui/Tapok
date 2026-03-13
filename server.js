@@ -111,6 +111,7 @@ async function initDb() {
                 media_type VARCHAR(20),
                 voice_url TEXT,
                 voice_duration INTEGER,
+                reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
@@ -126,7 +127,7 @@ async function initDb() {
             )
         `);
 
-        // Контакты пользователя (из телефонной книги)
+        // Контакты пользователя
         await pool.query(`
             CREATE TABLE IF NOT EXISTS user_contacts (
                 user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -137,7 +138,7 @@ async function initDb() {
             )
         `);
 
-        // Переименования контактов (только для себя)
+        // Переименования контактов
         await pool.query(`
             CREATE TABLE IF NOT EXISTS contact_renames (
                 user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -149,13 +150,41 @@ async function initDb() {
             )
         `);
 
-        // История переписки (для определения, с кем общался)
+        // История чатов
         await pool.query(`
             CREATE TABLE IF NOT EXISTS chat_history (
                 user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
                 chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
                 last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, chat_id)
+            )
+        `);
+
+        // ===== НОВЫЕ ТАБЛИЦЫ =====
+        
+        // Закрепленные сообщения
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS pinned_messages (
+                id SERIAL PRIMARY KEY,
+                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
+                message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
+                pinned_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(chat_id, message_id)
+            )
+        `);
+
+        // Права администраторов в группах
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS admin_permissions (
+                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                can_add_admins BOOLEAN DEFAULT false,
+                can_manage_users BOOLEAN DEFAULT false,
+                can_delete_messages BOOLEAN DEFAULT false,
+                can_change_info BOOLEAN DEFAULT false,
+                can_pin_messages BOOLEAN DEFAULT true,
+                PRIMARY KEY (chat_id, user_id)
             )
         `);
 
@@ -365,7 +394,6 @@ app.post('/api/login', async (req, res) => {
 });
 
 // ========== КОНТАКТЫ ==========
-// Синхронизация контактов с телефонной книги
 app.post('/api/contacts/sync', authenticateToken, async (req, res) => {
     const { contacts } = req.body;
     
@@ -412,7 +440,6 @@ app.post('/api/contacts/sync', authenticateToken, async (req, res) => {
     }
 });
 
-// Получить контакты из Tapok
 app.get('/api/contacts', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(`
@@ -433,10 +460,8 @@ app.get('/api/contacts', authenticateToken, async (req, res) => {
     }
 });
 
-// Получить список людей для создания группы (контакты + те, с кем общался)
 app.get('/api/group-candidates', authenticateToken, async (req, res) => {
     try {
-        // Контакты в Tapok
         const contacts = await pool.query(`
             SELECT DISTINCT u.id, u.phone, u.name, u.username, u.avatar,
                    'contact' as source,
@@ -447,7 +472,6 @@ app.get('/api/group-candidates', authenticateToken, async (req, res) => {
             WHERE uc.user_id = $1
         `, [req.user.userId]);
         
-        // Люди, с которыми есть чаты (исключаем тех, кто уже в контактах)
         const chatted = await pool.query(`
             SELECT DISTINCT u.id, u.phone, u.name, u.username, u.avatar,
                    'chatted' as source,
@@ -464,7 +488,6 @@ app.get('/api/group-candidates', authenticateToken, async (req, res) => {
             )
         `, [req.user.userId]);
         
-        // Объединяем и убираем дубликаты
         const allUsers = [...contacts.rows, ...chatted.rows];
         const uniqueUsers = Array.from(new Map(allUsers.map(u => [u.id, u])).values());
         
@@ -475,8 +498,6 @@ app.get('/api/group-candidates', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== ПЕРЕИМЕНОВАНИЕ КОНТАКТОВ ==========
-// Переименовать контакт (только для себя)
 app.put('/api/contacts/rename', authenticateToken, async (req, res) => {
     const { contactUserId, customName } = req.body;
     
@@ -499,7 +520,6 @@ app.put('/api/contacts/rename', authenticateToken, async (req, res) => {
     }
 });
 
-// Удалить переименование (вернуть оригинальное имя)
 app.delete('/api/contacts/rename', authenticateToken, async (req, res) => {
     const { contactUserId } = req.body;
     
@@ -517,7 +537,6 @@ app.delete('/api/contacts/rename', authenticateToken, async (req, res) => {
 });
 
 // ========== НАСТРОЙКИ ==========
-// Получить настройки пользователя
 app.get('/api/settings', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
@@ -532,7 +551,6 @@ app.get('/api/settings', authenticateToken, async (req, res) => {
     }
 });
 
-// Обновить настройки
 app.put('/api/settings', authenticateToken, async (req, res) => {
     const { theme, hide_phone, hide_status, hide_avatar, who_can_write } = req.body;
     
@@ -555,7 +573,6 @@ app.put('/api/settings', authenticateToken, async (req, res) => {
     }
 });
 
-// Обновить username
 app.put('/api/users/username', authenticateToken, async (req, res) => {
     const { username } = req.body;
     
@@ -585,7 +602,6 @@ app.put('/api/users/username', authenticateToken, async (req, res) => {
     }
 });
 
-// Получить данные текущего пользователя
 app.get('/api/users/me', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
@@ -604,7 +620,6 @@ app.get('/api/users/me', authenticateToken, async (req, res) => {
     }
 });
 
-// Обновить имя пользователя
 app.put('/api/users/name', authenticateToken, async (req, res) => {
     const { name } = req.body;
     
@@ -625,7 +640,6 @@ app.put('/api/users/name', authenticateToken, async (req, res) => {
     }
 });
 
-// Обновить аватар
 app.post('/api/users/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'Файл не загружен' });
@@ -680,7 +694,6 @@ app.get('/api/users/search', authenticateToken, async (req, res) => {
     }
 });
 
-// ПОЛУЧИТЬ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ
 app.get('/api/users/:userId', authenticateToken, async (req, res) => {
     const { userId } = req.params;
     
@@ -696,7 +709,6 @@ app.get('/api/users/:userId', authenticateToken, async (req, res) => {
         
         const user = result.rows[0];
         
-        // Проверяем, есть ли чат с сообщениями
         const chatWithMessages = await pool.query(`
             SELECT c.id FROM chats c
             JOIN chat_participants cp1 ON c.id = cp1.chat_id
@@ -711,7 +723,6 @@ app.get('/api/users/:userId', authenticateToken, async (req, res) => {
             )
         `, [req.user.userId, userId]);
         
-        // Проверяем, переименован ли контакт
         const rename = await pool.query(
             'SELECT custom_name FROM contact_renames WHERE user_id = $1 AND contact_user_id = $2',
             [req.user.userId, userId]
@@ -737,7 +748,6 @@ app.get('/api/users/:userId', authenticateToken, async (req, res) => {
 });
 
 // ========== ЧАТЫ ==========
-// ПОЛУЧИТЬ ЧАТЫ (только с сообщениями)
 app.get('/api/chats', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(`
@@ -805,7 +815,6 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
     }
 });
 
-// СОЗДАТЬ ЧАТ (без создания чата, если нет сообщения)
 app.post('/api/chats', authenticateToken, async (req, res) => {
     const { name, isGroup, participants } = req.body;
     
@@ -846,7 +855,6 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
     }
 });
 
-// ПОИСК ПО ЧАТАМ
 app.get('/api/chats/search', authenticateToken, async (req, res) => {
     const { query } = req.query;
     
@@ -910,7 +918,6 @@ app.get('/api/chats/search', authenticateToken, async (req, res) => {
     }
 });
 
-// ПОЛУЧИТЬ ЧАТ
 app.get('/api/chats/:chatId', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
 
@@ -950,7 +957,6 @@ app.get('/api/chats/:chatId', authenticateToken, async (req, res) => {
     }
 });
 
-// УДАЛИТЬ ЧАТ
 app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
 
@@ -973,7 +979,7 @@ app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
     }
 });
 
-// ПОЛУЧИТЬ СООБЩЕНИЯ
+// ========== СООБЩЕНИЯ ==========
 app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
     const { limit = 50 } = req.query;
@@ -989,11 +995,19 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
         }
 
         const result = await pool.query(`
-            SELECT m.*, u.name as user_name, u.phone, u.avatar,
-                   cr.custom_name
+            SELECT m.*, 
+                   u.name as user_name, u.phone, u.avatar,
+                   cr.custom_name,
+                   json_build_object(
+                       'id', rm.id,
+                       'text', rm.text,
+                       'user_name', ru.name
+                   ) as reply_to
             FROM messages m
             JOIN users u ON m.user_id = u.id
             LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
+            LEFT JOIN messages rm ON m.reply_to = rm.id
+            LEFT JOIN users ru ON rm.user_id = ru.id
             WHERE m.chat_id = $2
             ORDER BY m.created_at DESC
             LIMIT $3
@@ -1012,7 +1026,6 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
     }
 });
 
-// УДАЛИТЬ СООБЩЕНИЕ
 app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
     const { messageId } = req.params;
 
@@ -1039,14 +1052,14 @@ app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
     }
 });
 
-// ОТПРАВКА СООБЩЕНИЙ (с записью в chat_history)
+// ===== НОВЫЙ ЭНДПОИНТ: ОТПРАВКА С ОТВЕТОМ =====
 app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     { name: 'photos', maxCount: 10 },
     { name: 'videos', maxCount: 5 },
     { name: 'voice', maxCount: 1 }
 ]), async (req, res) => {
     const { chatId } = req.params;
-    const { text, duration } = req.body;
+    const { text, duration, replyTo } = req.body;
     const files = req.files;
 
     const client = await pool.connect();
@@ -1058,8 +1071,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
 
         if (text && text.trim()) {
             const textResult = await client.query(
-                'INSERT INTO messages (chat_id, user_id, text) VALUES ($1, $2, $3) RETURNING *',
-                [chatId, req.user.userId, text]
+                'INSERT INTO messages (chat_id, user_id, text, reply_to) VALUES ($1, $2, $3, $4) RETURNING *',
+                [chatId, req.user.userId, text, replyTo || null]
             );
             messages.push(textResult.rows[0]);
         }
@@ -1068,8 +1081,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             for (const photo of files.photos) {
                 const mediaUrl = `/uploads/${photo.filename}`;
                 const photoResult = await client.query(
-                    'INSERT INTO messages (chat_id, user_id, media_url, media_type) VALUES ($1, $2, $3, $4) RETURNING *',
-                    [chatId, req.user.userId, mediaUrl, 'photo']
+                    'INSERT INTO messages (chat_id, user_id, media_url, media_type, reply_to) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+                    [chatId, req.user.userId, mediaUrl, 'photo', replyTo || null]
                 );
                 messages.push(photoResult.rows[0]);
             }
@@ -1079,8 +1092,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             for (const video of files.videos) {
                 const mediaUrl = `/uploads/${video.filename}`;
                 const videoResult = await client.query(
-                    'INSERT INTO messages (chat_id, user_id, media_url, media_type) VALUES ($1, $2, $3, $4) RETURNING *',
-                    [chatId, req.user.userId, mediaUrl, 'video']
+                    'INSERT INTO messages (chat_id, user_id, media_url, media_type, reply_to) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+                    [chatId, req.user.userId, mediaUrl, 'video', replyTo || null]
                 );
                 messages.push(videoResult.rows[0]);
             }
@@ -1090,8 +1103,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             const voice = files.voice[0];
             const voiceUrl = `/uploads/${voice.filename}`;
             const voiceResult = await client.query(
-                'INSERT INTO messages (chat_id, user_id, voice_url, voice_duration, media_type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-                [chatId, req.user.userId, voiceUrl, duration || 0, 'voice']
+                'INSERT INTO messages (chat_id, user_id, voice_url, voice_duration, media_type, reply_to) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+                [chatId, req.user.userId, voiceUrl, duration || 0, 'voice', replyTo || null]
             );
             messages.push(voiceResult.rows[0]);
         }
@@ -1110,7 +1123,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             }
         }
 
-        // Обновляем историю чата
         await client.query(`
             INSERT INTO chat_history (user_id, chat_id, last_message_at)
             VALUES ($1, $2, CURRENT_TIMESTAMP)
@@ -1133,10 +1145,17 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
         for (const msg of messages) {
             const fullMsg = await client.query(`
                 SELECT m.*, u.name as user_name, u.phone, u.avatar,
-                       cr.custom_name
+                       cr.custom_name,
+                       json_build_object(
+                           'id', rm.id,
+                           'text', rm.text,
+                           'user_name', ru.name
+                       ) as reply_to
                 FROM messages m
                 JOIN users u ON m.user_id = u.id
                 LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
+                LEFT JOIN messages rm ON m.reply_to = rm.id
+                LEFT JOIN users ru ON rm.user_id = ru.id
                 WHERE m.id = $2
             `, [req.user.userId, msg.id]);
             fullMessages.push(fullMsg.rows[0]);
@@ -1238,7 +1257,122 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     }
 });
 
-// ПОДПИСКА НА PUSH
+// ========== ЗАКРЕПЛЕННЫЕ СООБЩЕНИЯ ==========
+app.post('/api/messages/:messageId/pin', authenticateToken, async (req, res) => {
+    const { messageId } = req.params;
+    const { chatId } = req.body;
+    
+    try {
+        // Проверяем права (для групп)
+        const chat = await pool.query('SELECT is_group FROM chats WHERE id = $1', [chatId]);
+        
+        if (chat.rows[0]?.is_group) {
+            const perm = await pool.query(
+                'SELECT can_pin_messages FROM admin_permissions WHERE chat_id = $1 AND user_id = $2',
+                [chatId, req.user.userId]
+            );
+            
+            if (!perm.rows[0]?.can_pin_messages) {
+                return res.status(403).json({ error: 'Нет права закреплять сообщения' });
+            }
+        }
+        
+        await pool.query(
+            'INSERT INTO pinned_messages (chat_id, message_id, pinned_by) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
+            [chatId, messageId, req.user.userId]
+        );
+        
+        const pinned = await pool.query(`
+            SELECT pm.*, m.text, m.media_type, m.created_at,
+                   u.name as user_name, u.id as user_id
+            FROM pinned_messages pm
+            JOIN messages m ON pm.message_id = m.id
+            JOIN users u ON m.user_id = u.id
+            WHERE pm.chat_id = $1
+            ORDER BY pm.pinned_at DESC
+        `, [chatId]);
+        
+        const wsMessage = JSON.stringify({
+            type: 'pins_updated',
+            chatId: parseInt(chatId),
+            pins: pinned.rows
+        });
+        
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(wsMessage);
+            }
+        });
+        
+        res.json(pinned.rows);
+        
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка при закреплении' });
+    }
+});
+
+app.delete('/api/messages/:messageId/pin', authenticateToken, async (req, res) => {
+    const { messageId } = req.params;
+    const { chatId } = req.body;
+    
+    try {
+        await pool.query(
+            'DELETE FROM pinned_messages WHERE chat_id = $1 AND message_id = $2',
+            [chatId, messageId]
+        );
+        
+        const pinned = await pool.query(`
+            SELECT pm.*, m.text, m.media_type, m.created_at,
+                   u.name as user_name, u.id as user_id
+            FROM pinned_messages pm
+            JOIN messages m ON pm.message_id = m.id
+            JOIN users u ON m.user_id = u.id
+            WHERE pm.chat_id = $1
+            ORDER BY pm.pinned_at DESC
+        `, [chatId]);
+        
+        const wsMessage = JSON.stringify({
+            type: 'pins_updated',
+            chatId: parseInt(chatId),
+            pins: pinned.rows
+        });
+        
+        wss.clients.forEach(client => {
+            if (client.readyState === WebSocket.OPEN) {
+                client.send(wsMessage);
+            }
+        });
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка при откреплении' });
+    }
+});
+
+app.get('/api/chats/:chatId/pins', authenticateToken, async (req, res) => {
+    const { chatId } = req.params;
+    
+    try {
+        const pinned = await pool.query(`
+            SELECT pm.*, m.text, m.media_type, m.created_at,
+                   u.name as user_name, u.id as user_id
+            FROM pinned_messages pm
+            JOIN messages m ON pm.message_id = m.id
+            JOIN users u ON m.user_id = u.id
+            WHERE pm.chat_id = $1
+            ORDER BY pm.pinned_at DESC
+        `, [chatId]);
+        
+        res.json(pinned.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка при получении закрепленных' });
+    }
+});
+
+// ========== ПОДПИСКА НА PUSH ==========
 app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
     const { subscription } = req.body;
 
@@ -1254,7 +1388,6 @@ app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
     }
 });
 
-// Эндпоинт для проверки подписки
 app.get('/api/push/status', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
