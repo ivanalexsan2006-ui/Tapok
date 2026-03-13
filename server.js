@@ -160,8 +160,6 @@ async function initDb() {
             )
         `);
 
-        // ===== НОВЫЕ ТАБЛИЦЫ =====
-        
         // Закрепленные сообщения
         await pool.query(`
             CREATE TABLE IF NOT EXISTS pinned_messages (
@@ -979,12 +977,13 @@ app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== СООБЩЕНИЯ ==========
+// ========== СООБЩЕНИЯ (ИСПРАВЛЕННАЯ ВЕРСИЯ) ==========
 app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
     const { limit = 50 } = req.query;
 
     try {
+        // Проверяем доступ к чату
         const access = await pool.query(
             'SELECT * FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
             [chatId, req.user.userId]
@@ -994,15 +993,26 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'Нет доступа к чату' });
         }
 
+        // Упрощенный запрос без JSON построения
         const result = await pool.query(`
-            SELECT m.*, 
-                   u.name as user_name, u.phone, u.avatar,
-                   cr.custom_name,
-                   json_build_object(
-                       'id', rm.id,
-                       'text', rm.text,
-                       'user_name', ru.name
-                   ) as reply_to
+            SELECT 
+                m.id,
+                m.chat_id,
+                m.user_id,
+                m.text,
+                m.media_url,
+                m.media_type,
+                m.voice_url,
+                m.voice_duration,
+                m.reply_to,
+                m.created_at,
+                u.name as user_name,
+                u.phone,
+                u.avatar,
+                cr.custom_name,
+                rm.id as reply_id,
+                rm.text as reply_text,
+                ru.name as reply_user_name
             FROM messages m
             JOIN users u ON m.user_id = u.id
             LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
@@ -1013,16 +1023,39 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
             LIMIT $3
         `, [req.user.userId, chatId, limit]);
 
+        // Очищаем непрочитанные
         await pool.query(
             'DELETE FROM unread_messages WHERE chat_id = $1 AND user_id = $2',
             [chatId, req.user.userId]
         );
 
-        res.json(result.rows.reverse());
+        // Форматируем ответ
+        const messages = result.rows.map(row => ({
+            id: row.id,
+            chat_id: row.chat_id,
+            user_id: row.user_id,
+            text: row.text,
+            media_url: row.media_url,
+            media_type: row.media_type,
+            voice_url: row.voice_url,
+            voice_duration: row.voice_duration,
+            created_at: row.created_at,
+            user_name: row.user_name,
+            custom_name: row.custom_name,
+            phone: row.phone,
+            avatar: row.avatar,
+            reply_to: row.reply_id ? {
+                id: row.reply_id,
+                text: row.reply_text,
+                user_name: row.reply_user_name
+            } : null
+        }));
+
+        res.json(messages.reverse());
 
     } catch (err) {
-        console.error('Ошибка получения сообщений:', err);
-        res.status(500).json({ error: 'Ошибка получения сообщений' });
+        console.error('❌ Ошибка получения сообщений:', err);
+        res.status(500).json({ error: 'Ошибка получения сообщений: ' + err.message });
     }
 });
 
@@ -1052,7 +1085,6 @@ app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
     }
 });
 
-// ===== НОВЫЙ ЭНДПОИНТ: ОТПРАВКА С ОТВЕТОМ =====
 app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     { name: 'photos', maxCount: 10 },
     { name: 'videos', maxCount: 5 },
@@ -1146,11 +1178,9 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             const fullMsg = await client.query(`
                 SELECT m.*, u.name as user_name, u.phone, u.avatar,
                        cr.custom_name,
-                       json_build_object(
-                           'id', rm.id,
-                           'text', rm.text,
-                           'user_name', ru.name
-                       ) as reply_to
+                       rm.id as reply_id,
+                       rm.text as reply_text,
+                       ru.name as reply_user_name
                 FROM messages m
                 JOIN users u ON m.user_id = u.id
                 LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
@@ -1158,7 +1188,28 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
                 LEFT JOIN users ru ON rm.user_id = ru.id
                 WHERE m.id = $2
             `, [req.user.userId, msg.id]);
-            fullMessages.push(fullMsg.rows[0]);
+            
+            const row = fullMsg.rows[0];
+            fullMessages.push({
+                id: row.id,
+                chat_id: row.chat_id,
+                user_id: row.user_id,
+                text: row.text,
+                media_url: row.media_url,
+                media_type: row.media_type,
+                voice_url: row.voice_url,
+                voice_duration: row.voice_duration,
+                created_at: row.created_at,
+                user_name: row.user_name,
+                custom_name: row.custom_name,
+                phone: row.phone,
+                avatar: row.avatar,
+                reply_to: row.reply_id ? {
+                    id: row.reply_id,
+                    text: row.reply_text,
+                    user_name: row.reply_user_name
+                } : null
+            });
         }
 
         const wsMessage = JSON.stringify({
