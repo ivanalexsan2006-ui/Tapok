@@ -256,7 +256,8 @@
             z-index: 1000;
             box-shadow: 0 4px 20px rgba(0,0,0,0.3);
             display: none;
-            animation: slideUp 0.2s;
+            animation: scaleIn 0.2s;
+            transform-origin: top left;
         }
         
         .context-menu.show {
@@ -282,9 +283,9 @@
             to { opacity: 1; }
         }
         
-        @keyframes slideUp {
-            from { transform: translateY(10px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+        @keyframes scaleIn {
+            from { transform: scale(0.8); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
         }
         
         .message {
@@ -301,11 +302,6 @@
         
         .message:active {
             transform: scale(0.98);
-        }
-        
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
         }
         
         .my-message {
@@ -825,7 +821,6 @@
         // ===== ЗАГРУЗКА СООБЩЕНИЙ =====
         async function loadMessages() {
             try {
-                console.log('Загружаем сообщения для чата:', chatId);
                 const res = await fetch(`/api/chats/${chatId}/messages`, {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
@@ -836,7 +831,6 @@
                 }
 
                 const messages = await res.json();
-                console.log('Получены сообщения:', messages);
                 
                 if (Array.isArray(messages)) {
                     messages.forEach(msg => addMessage(msg, msg.user_id !== currentUser.id));
@@ -860,12 +854,12 @@
             // Добавляем обработчики событий
             messageDiv.addEventListener('contextmenu', (e) => {
                 e.preventDefault();
-                showContextMenu(e, msg);
+                showContextMenu(e, msg, messageDiv);
             });
             
             messageDiv.addEventListener('touchstart', (e) => {
                 window.contextMenuTimer = setTimeout(() => {
-                    showContextMenu(e, msg);
+                    showContextMenu(e, msg, messageDiv);
                 }, 500);
             });
             
@@ -878,16 +872,6 @@
             });
 
             let content = '';
-            
-            // Цитата ответа (если есть)
-            if (msg.reply_to) {
-                content += `
-                    <div class="reply-quote">
-                        <div class="reply-author">${msg.reply_to.user_name}</div>
-                        <div class="reply-text">${msg.reply_to.text || 'Медиа'}</div>
-                    </div>
-                `;
-            }
             
             // Добавляем имя отправителя для групповых чатов
             if (isTheir && isGroup) {
@@ -927,16 +911,16 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // ===== КОНТЕКСТНОЕ МЕНЮ =====
-        function showContextMenu(event, message) {
+        // ===== НОВОЕ УМНОЕ КОНТЕКСТНОЕ МЕНЮ =====
+        function showContextMenu(event, message, element) {
             event.preventDefault();
             
             selectedMessage = message;
-            selectedMessageElement = document.getElementById(`msg-${message.id}`);
+            selectedMessageElement = element;
             
             // Подсвечиваем сообщение и затемняем фон
             document.querySelectorAll('.message').forEach(m => m.classList.remove('highlighted'));
-            selectedMessageElement.classList.add('highlighted');
+            element.classList.add('highlighted');
             document.getElementById('message-overlay').classList.add('active');
             
             // Настраиваем пункты меню
@@ -944,13 +928,70 @@
             document.getElementById('delete-menu-item').style.display = 
                 message.user_id === currentUser.id ? 'flex' : 'none';
             
-            // Позиционируем меню
+            // Получаем координаты сообщения
+            const rect = element.getBoundingClientRect();
             const menu = document.getElementById('context-menu');
-            const x = event.type === 'touchstart' ? event.touches[0].clientX : event.clientX;
-            const y = event.type === 'touchstart' ? event.touches[0].clientY : event.clientY;
             
-            menu.style.left = x + 'px';
-            menu.style.top = y + 'px';
+            // Определяем, свои или чужие
+            const isMyMessage = message.user_id === currentUser.id;
+            
+            // Определяем, в верхней или нижней половине экрана
+            const screenCenter = window.innerHeight / 2;
+            const isInTopHalf = rect.top < screenCenter;
+            
+            // Базовые отступы
+            const offset = 8;
+            
+            // Рассчитываем позицию меню
+            let menuX, menuY;
+            
+            if (isInTopHalf) {
+                // Сообщение в верхней части - меню снизу
+                menuY = rect.bottom + offset;
+                
+                if (isMyMessage) {
+                    // Свои - привязка к левому нижнему углу
+                    menuX = rect.left;
+                } else {
+                    // Чужие - привязка к правому нижнему углу
+                    menuX = rect.right - menu.offsetWidth;
+                }
+            } else {
+                // Сообщение в нижней части - меню сверху
+                menuY = rect.top - menu.offsetHeight - offset;
+                
+                if (isMyMessage) {
+                    // Свои - привязка к левому верхнему углу
+                    menuX = rect.left;
+                } else {
+                    // Чужие - привязка к правому верхнему углу
+                    menuX = rect.right - menu.offsetWidth;
+                }
+            }
+            
+            // Проверяем, не выходит ли меню за левый край
+            if (menuX < 10) {
+                menuX = 10;
+            }
+            
+            // Проверяем, не выходит ли меню за правый край
+            if (menuX + menu.offsetWidth > window.innerWidth - 10) {
+                menuX = window.innerWidth - menu.offsetWidth - 10;
+            }
+            
+            // Проверяем, не выходит ли меню за верхний край
+            if (menuY < 10) {
+                menuY = 10;
+            }
+            
+            // Проверяем, не выходит ли меню за нижний край
+            if (menuY + menu.offsetHeight > window.innerHeight - 10) {
+                menuY = window.innerHeight - menu.offsetHeight - 10;
+            }
+            
+            // Применяем позицию
+            menu.style.left = menuX + 'px';
+            menu.style.top = menuY + 'px';
             menu.classList.add('show');
         }
 
@@ -973,9 +1014,8 @@
 
         function replyToMessage() {
             if (selectedMessage) {
-                // Вставляем в поле ввода упоминание
                 const input = document.getElementById('message-input');
-                input.value = `↩️ ${selectedMessage.user_name}: `;
+                input.value = `↩️ ${selectedMessage.user_name}: ${selectedMessage.text || 'Медиа'} `;
                 input.focus();
                 showToast('Ответ на сообщение');
             }
@@ -984,7 +1024,6 @@
 
         function forwardMessage() {
             if (selectedMessage) {
-                // TODO: реализовать пересылку
                 showToast('Пересылка будет позже');
             }
             closeContextMenu();
@@ -1038,7 +1077,6 @@
             closeContextMenu();
         }
 
-        // Вспомогательная функция
         function showToast(text) {
             const toast = document.createElement('div');
             toast.textContent = text;
@@ -1266,12 +1304,7 @@
             const formData = new FormData();
             
             if (text) {
-                // Проверяем, является ли текст ответом
-                if (text.startsWith('↩️')) {
-                    formData.append('text', text);
-                } else {
-                    formData.append('text', text);
-                }
+                formData.append('text', text);
                 input.value = '';
             }
 
