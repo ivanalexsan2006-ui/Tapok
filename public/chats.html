@@ -870,6 +870,16 @@
         });
 
         loadChats();
+        <!-- Регистрация Service Worker -->
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+            .then(reg => console.log('✅ Service Worker зарегистрирован:', reg.scope))
+            .catch(err => console.error('❌ Ошибка регистрации SW:', err));
+    });
+}
+</script>
     </script>
 </body>
 </html>
