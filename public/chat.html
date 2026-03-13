@@ -68,6 +68,15 @@
             text-overflow: ellipsis;
         }
         
+        .chat-name a {
+            color: white;
+            text-decoration: none;
+        }
+        
+        .chat-name a:hover {
+            text-decoration: underline;
+        }
+        
         .chat-status { 
             font-size: clamp(11px, 3vw, 12px); 
             opacity: 0.8;
@@ -478,7 +487,8 @@
                 } else {
                     const other = chat.participants?.find(p => p.id !== currentUser.id);
                     if (other) {
-                        document.getElementById('chat-name').textContent = other.name || 'Пользователь';
+                        // Имя теперь кликабельное и ведет в профиль
+                        document.getElementById('chat-name').innerHTML = `<a href="/user-profile.html?id=${other.id}" style="color: white; text-decoration: none;">${other.name || 'Пользователь'}</a>`;
                         document.getElementById('chat-status').textContent = other.status === 'online' ? 'онлайн' : 'офлайн';
                     }
                 }
