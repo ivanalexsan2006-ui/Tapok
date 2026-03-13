@@ -69,12 +69,7 @@ async function initDb() {
                 status VARCHAR(20) DEFAULT 'offline',
                 push_subscription JSONB,
                 last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                hide_phone BOOLEAN DEFAULT false,
-                hide_status BOOLEAN DEFAULT false,
-                hide_avatar BOOLEAN DEFAULT false,
-                who_can_write VARCHAR(20) DEFAULT 'all',
-                theme VARCHAR(10) DEFAULT 'dark'
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
 
@@ -187,44 +182,32 @@ async function initDb() {
 
         console.log('✅ Базовая структура таблиц готова');
 
-        // ===== ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ В СУЩЕСТВУЮЩИЕ ТАБЛИЦЫ =====
+        // ===== ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ ПОСЛЕ СОЗДАНИЯ ТАБЛИЦ =====
         
-        // Добавляем колонку reply_to в messages
+        // Добавляем поля приватности в users
         try {
             await pool.query(`
-                DO $$ 
-                BEGIN 
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                                  WHERE table_name='messages' AND column_name='reply_to') THEN
-                        ALTER TABLE messages ADD COLUMN reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL;
-                        RAISE NOTICE 'Колонка reply_to добавлена';
-                    END IF;
-                END $$;
+                ALTER TABLE users 
+                ADD COLUMN IF NOT EXISTS hide_phone BOOLEAN DEFAULT false,
+                ADD COLUMN IF NOT EXISTS hide_status BOOLEAN DEFAULT false,
+                ADD COLUMN IF NOT EXISTS hide_avatar BOOLEAN DEFAULT false,
+                ADD COLUMN IF NOT EXISTS who_can_write VARCHAR(20) DEFAULT 'all',
+                ADD COLUMN IF NOT EXISTS theme VARCHAR(10) DEFAULT 'dark'
             `);
-            console.log('✅ Колонка reply_to проверена/добавлена');
+            console.log('✅ Поля приватности добавлены в users');
         } catch (err) {
-            console.log('⚠️ Ошибка при добавлении reply_to:', err.message);
+            console.log('⚠️ Ошибка при добавлении полей в users:', err.message);
         }
 
-        // Добавляем другие поля если их нет
+        // Добавляем поле reply_to в messages
         try {
             await pool.query(`
-                DO $$ 
-                BEGIN 
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
-                                  WHERE table_name='users' AND column_name='hide_phone') THEN
-                        ALTER TABLE users 
-                        ADD COLUMN hide_phone BOOLEAN DEFAULT false,
-                        ADD COLUMN hide_status BOOLEAN DEFAULT false,
-                        ADD COLUMN hide_avatar BOOLEAN DEFAULT false,
-                        ADD COLUMN who_can_write VARCHAR(20) DEFAULT 'all',
-                        ADD COLUMN theme VARCHAR(10) DEFAULT 'dark';
-                    END IF;
-                END $$;
+                ALTER TABLE messages 
+                ADD COLUMN IF NOT EXISTS reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL
             `);
-            console.log('✅ Дополнительные поля пользователя проверены');
+            console.log('✅ Поле reply_to добавлено в messages');
         } catch (err) {
-            console.log('⚠️ Ошибка при добавлении полей пользователя:', err.message);
+            console.log('⚠️ Ошибка при добавлении reply_to в messages:', err.message);
         }
 
         console.log('✅ Все таблицы обновлены полностью');
@@ -233,85 +216,6 @@ async function initDb() {
         console.error('❌ Ошибка создания таблиц:', err);
     }
 }
-
-        // Непрочитанные
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS unread_messages (
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
-                message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, chat_id, message_id)
-            )
-        `);
-
-        // Контакты пользователя
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS user_contacts (
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                contact_phone VARCHAR(50) NOT NULL,
-                contact_name VARCHAR(100),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, contact_phone)
-            )
-        `);
-
-        // Переименования контактов
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS contact_renames (
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                contact_user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                custom_name VARCHAR(100) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, contact_user_id)
-            )
-        `);
-
-        // История чатов
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS chat_history (
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
-                last_message_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (user_id, chat_id)
-            )
-        `);
-
-        // Закрепленные сообщения
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS pinned_messages (
-                id SERIAL PRIMARY KEY,
-                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
-                message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
-                pinned_by INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                pinned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(chat_id, message_id)
-            )
-        `);
-
-        // Права администраторов в группах
-        await pool.query(`
-            CREATE TABLE IF NOT EXISTS admin_permissions (
-                chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
-                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-                can_add_admins BOOLEAN DEFAULT false,
-                can_manage_users BOOLEAN DEFAULT false,
-                can_delete_messages BOOLEAN DEFAULT false,
-                can_change_info BOOLEAN DEFAULT false,
-                can_pin_messages BOOLEAN DEFAULT true,
-                PRIMARY KEY (chat_id, user_id)
-            )
-        `);
-
-        console.log('✅ База данных готова');
-
-    } catch (err) {
-        console.error('❌ Ошибка создания таблиц:', err);
-    }
-}
-
-initDb();
 
 // ========== ЗАГРУЗКА ФАЙЛОВ ==========
 const storage = multer.diskStorage({
@@ -443,7 +347,7 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
         }
 
         const result = await pool.query(
-            'INSERT INTO users (phone, name, username, avatar, status) VALUES ($1, $2, $3, $4, $5) RETURNING id, phone, name, username, avatar, theme',
+            'INSERT INTO users (phone, name, username, avatar, status) VALUES ($1, $2, $3, $4, $5) RETURNING id, phone, name, username, avatar',
             [phone, name, username || null, avatar, 'online']
         );
 
@@ -1095,7 +999,7 @@ app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== СООБЩЕНИЯ С ПОДДЕРЖКОЙ ОТВЕТОВ ==========
+// ========== СООБЩЕНИЯ ==========
 app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
     const { limit = 50 } = req.query;
@@ -1199,7 +1103,6 @@ app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
     }
 });
 
-// ОТПРАВКА С ПОДДЕРЖКОЙ ОТВЕТОВ
 app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     { name: 'photos', maxCount: 10 },
     { name: 'videos', maxCount: 5 },
@@ -1630,7 +1533,12 @@ wss.on('connection', (ws) => {
     });
 });
 
-// ========== ЗАПУСК ==========
+// ========== ЗАПУСК ИНИЦИАЛИЗАЦИИ БД ==========
+initDb().catch(err => {
+    console.error('❌ Ошибка при инициализации БД:', err);
+});
+
+// ========== ЗАПУСК СЕРВЕРА ==========
 server.listen(PORT, () => {
     console.log(`\n🚀 TAPOK MESSENGER 7.0 ЗАПУЩЕН!`);
     console.log(`📱 Пароль для всех: ${APP_PASSWORD}`);
@@ -1647,4 +1555,3 @@ function getLocalIP() {
     }
     return 'localhost';
 }
-
