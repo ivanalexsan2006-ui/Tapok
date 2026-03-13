@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Tapok · чаты</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -22,13 +22,20 @@
             align-items: center;
         }
         .header h1 { font-size: 24px; }
-        .logout-btn {
+        .profile-btn {
             background: transparent;
             border: 1px solid white;
             color: white;
-            padding: 5px 15px;
-            border-radius: 5px;
+            padding: 8px 15px;
+            border-radius: 20px;
             cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .profile-btn:hover {
+            background: rgba(255,255,255,0.1);
         }
         .search {
             padding: 10px;
@@ -214,7 +221,9 @@
     <div class="app">
         <div class="header">
             <h1>Tapok</h1>
-            <button class="logout-btn" onclick="logout()">Выйти</button>
+            <button class="profile-btn" onclick="window.location.href='/profile.html'">
+                👤 Мой профиль
+            </button>
         </div>
 
         <div class="search">
@@ -472,11 +481,6 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') closeModal();
         });
-
-        function logout() {
-            localStorage.clear();
-            window.location.href = '/';
-        }
 
         loadChats();
     </script>
