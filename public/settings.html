@@ -6,25 +6,70 @@
     <title>Tapok · настройки</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
+        
+        /* ===== ТЕМНАЯ ТЕМА ===== */
+        body.dark {
             background: #17212b;
-            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             color: white;
-            min-height: 100vh;
         }
-        .header {
+        body.dark .header { background: #2a6ee0; }
+        body.dark .section { background: #242f3d; }
+        body.dark .section-title { background: #1e2b38; color: #8a9aa8; }
+        body.dark .setting-item { border-bottom-color: #1e2b38; }
+        body.dark .setting-desc { color: #8a9aa8; }
+        body.dark .select { background: #1e2b38; color: white; }
+        body.dark .theme-btn { background: #1e2b38; color: white; }
+        
+        /* ===== СВЕТЛАЯ ТЕМА ===== */
+        body.light {
+            background: #f5f5f5;
+            color: #000000;
+        }
+        body.light .header { background: #2a6ee0; color: white; }
+        body.light .section { background: white; }
+        body.light .section-title { 
+            background: #eaeaea; 
+            color: #666;
+            border-bottom: 1px solid #ddd;
+        }
+        body.light .setting-item { border-bottom-color: #eaeaea; }
+        body.light .setting-desc { color: #666; }
+        body.light .select { 
+            background: #f5f5f5; 
+            color: #000000;
+            border: 1px solid #ddd;
+        }
+        body.light .theme-btn { 
+            background: #eaeaea; 
+            color: #000000;
+            border: 1px solid #ddd;
+        }
+        body.light .theme-btn.active {
             background: #2a6ee0;
+            color: white;
+            border-color: #2a6ee0;
+        }
+        body.light .back-btn { color: white; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh;
+            transition: background 0.3s, color 0.3s;
+        }
+        
+        .header {
             padding: 15px;
             display: flex;
             align-items: center;
             gap: 15px;
             position: sticky;
             top: 0;
+            transition: background 0.3s;
         }
+        
         .back-btn {
             background: transparent;
             border: none;
-            color: white;
             font-size: 24px;
             cursor: pointer;
             width: 44px;
@@ -32,47 +77,58 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            color: white;
         }
+        
         .header h1 {
             font-size: 20px;
             flex: 1;
+            color: white;
         }
+        
         .content {
             padding: 20px;
         }
+        
         .section {
-            background: #242f3d;
             border-radius: 12px;
             margin-bottom: 20px;
             overflow: hidden;
+            transition: background 0.3s;
         }
+        
         .section-title {
             padding: 15px;
-            background: #1e2b38;
             font-weight: bold;
-            color: #8a9aa8;
+            transition: background 0.3s, color 0.3s;
         }
+        
         .setting-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
             padding: 15px;
-            border-bottom: 1px solid #1e2b38;
+            border-bottom: 1px solid transparent;
+            transition: border-color 0.3s;
         }
         .setting-item:last-child {
             border-bottom: none;
         }
+        
         .setting-info {
             flex: 1;
         }
+        
         .setting-name {
             font-weight: bold;
             margin-bottom: 4px;
         }
+        
         .setting-desc {
             font-size: 12px;
-            color: #8a9aa8;
+            transition: color 0.3s;
         }
+        
         /* Toggle Switch */
         .switch {
             position: relative;
@@ -97,6 +153,9 @@
             transition: .3s;
             border-radius: 28px;
         }
+        body.light .slider {
+            background-color: #ccc;
+        }
         .slider:before {
             position: absolute;
             content: "";
@@ -114,38 +173,41 @@
         input:checked + .slider:before {
             transform: translateX(24px);
         }
+        
         /* Select */
         .select {
-            background: #1e2b38;
-            color: white;
-            border: none;
             padding: 8px 30px 8px 12px;
+            border: none;
             border-radius: 20px;
             font-size: 14px;
             appearance: none;
-            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
+            background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238a9aa8'%3e%3cpath d='M7 10l5 5 5-5z'/%3e%3c/svg%3e");
             background-repeat: no-repeat;
             background-position: right 8px center;
             background-size: 20px;
+            transition: background 0.3s, color 0.3s, border 0.3s;
         }
+        
+        /* Theme buttons */
         .theme-buttons {
             display: flex;
             gap: 10px;
         }
+        
         .theme-btn {
             flex: 1;
             padding: 10px;
-            border: 1px solid #1e2b38;
-            background: #1e2b38;
-            color: white;
+            border: none;
             border-radius: 8px;
             cursor: pointer;
             transition: all 0.2s;
         }
+        
         .theme-btn.active {
             background: #2a6ee0;
-            border-color: #2a6ee0;
+            color: white;
         }
+        
         .loading {
             text-align: center;
             padding: 50px;
@@ -153,9 +215,9 @@
         }
     </style>
 </head>
-<body>
+<body class="dark">
     <div class="header">
-        <button class="back-btn" onclick="window.location.href='/profile.html'">←</button>
+        <button class="back-btn" onclick="window.location.href='/chats.html'">←</button>
         <h1>Настройки</h1>
     </div>
 
@@ -170,6 +232,10 @@
 
         let settings = {};
 
+        // Загружаем тему при старте
+        const savedTheme = localStorage.getItem('theme') || 'dark';
+        document.body.className = savedTheme;
+
         async function loadSettings() {
             try {
                 const res = await fetch('/api/settings', {
@@ -179,6 +245,12 @@
                 });
                 
                 settings = await res.json();
+                
+                // Если тема не совпадает с сохраненной в localStorage, обновляем
+                if (settings.theme !== savedTheme) {
+                    settings.theme = savedTheme;
+                }
+                
                 displaySettings();
             } catch (e) {
                 console.error('Ошибка загрузки настроек:', e);
@@ -195,7 +267,7 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Тема</div>
-                            <div class="setting-desc">Светлая или темная</div>
+                            <div class="setting-desc">Выберите оформление</div>
                         </div>
                         <div class="theme-buttons">
                             <button class="theme-btn ${settings.theme === 'dark' ? 'active' : ''}" onclick="setTheme('dark')">🌙 Темная</button>
@@ -211,7 +283,7 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Кто может писать</div>
-                            <div class="setting-desc">Ограничьте круг лиц</div>
+                            <div class="setting-desc">Ограничьте круг лиц, которые могут вам писать</div>
                         </div>
                         <select class="select" onchange="setWhoCanWrite(this.value)">
                             <option value="all" ${settings.who_can_write === 'all' ? 'selected' : ''}>Все</option>
@@ -222,7 +294,7 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Скрыть телефон</div>
-                            <div class="setting-desc">Номер не будет виден другим</div>
+                            <div class="setting-desc">Номер не будет виден другим пользователям</div>
                         </div>
                         <label class="switch">
                             <input type="checkbox" ${settings.hide_phone ? 'checked' : ''} onchange="setHidePhone(this.checked)">
@@ -233,7 +305,7 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Скрыть статус</div>
-                            <div class="setting-desc">Никто не видит "онлайн/офлайн"</div>
+                            <div class="setting-desc">Никто не будет видеть "онлайн/офлайн"</div>
                         </div>
                         <label class="switch">
                             <input type="checkbox" ${settings.hide_status ? 'checked' : ''} onchange="setHideStatus(this.checked)">
@@ -244,7 +316,7 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Скрыть аватар</div>
-                            <div class="setting-desc">Фото профиля не видно другим</div>
+                            <div class="setting-desc">Фото профиля не будет видно другим</div>
                         </div>
                         <label class="switch">
                             <input type="checkbox" ${settings.hide_avatar ? 'checked' : ''} onchange="setHideAvatar(this.checked)">
@@ -253,19 +325,41 @@
                     </div>
                 </div>
 
-                <!-- Инфо -->
+                <!-- Данные -->
+                <div class="section">
+                    <div class="section-title">Данные</div>
+                    
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <div class="setting-name">Очистить историю</div>
+                            <div class="setting-desc">Удалить все сообщения (необратимо)</div>
+                        </div>
+                        <button class="theme-btn" onclick="clearHistory()" style="flex: 0 0 auto; padding: 8px 15px;">Очистить</button>
+                    </div>
+                </div>
+
+                <!-- Информация -->
                 <div class="section">
                     <div class="section-title">О приложении</div>
+                    
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Версия</div>
                             <div class="setting-desc">Tapok 7.0</div>
                         </div>
                     </div>
+                    
+                    <div class="setting-item">
+                        <div class="setting-info">
+                            <div class="setting-name">Разработчик</div>
+                            <div class="setting-desc">@ivanalexsan2006-ui</div>
+                        </div>
+                    </div>
                 </div>
             `;
         }
 
+        // ===== УПРАВЛЕНИЕ ТЕМОЙ =====
         async function setTheme(theme) {
             try {
                 await fetch('/api/settings', {
@@ -278,16 +372,21 @@
                 });
                 
                 settings.theme = theme;
-                displaySettings();
+                document.body.className = theme;
+                localStorage.setItem('theme', theme);
                 
-                // Применяем тему
-                document.body.style.background = theme === 'light' ? '#f5f5f5' : '#17212b';
-                document.body.style.color = theme === 'light' ? '#000' : '#fff';
+                // Обновляем активные кнопки
+                document.querySelectorAll('.theme-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelectorAll('.theme-btn')[theme === 'dark' ? 0 : 1].classList.add('active');
+                
             } catch (e) {
                 console.error('Ошибка:', e);
             }
         }
 
+        // ===== НАСТРОЙКИ ПРИВАТНОСТИ =====
         async function setWhoCanWrite(value) {
             await fetch('/api/settings', {
                 method: 'PUT',
@@ -330,6 +429,14 @@
                 },
                 body: JSON.stringify({ hide_avatar: value })
             });
+        }
+
+        // ===== ОЧИСТКА ИСТОРИИ =====
+        async function clearHistory() {
+            if (!confirm('Вы уверены? Это действие нельзя отменить.')) return;
+            
+            // TODO: добавить API для очистки истории
+            alert('Функция в разработке');
         }
 
         loadSettings();
