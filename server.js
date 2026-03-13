@@ -24,7 +24,7 @@ const PORT = process.env.PORT || 3000;
 // VAPID keys для push-уведомлений
 const vapidKeys = {
     publicKey: 'BC6uJ73RTorxmODkLl9_Ot1IEaEoOK1Jzplv-d4wAUSY8aQU5P3pSneGIZ9puhgpHFiJBa6uWXaZKugo39ym4O8',
-    privateKey: 'iNOMhASK8pXyApWRKNN1F6AjoPDC_YwOClTMykOstK0'
+    privateKey: 'o9yu3hRYGZZv4ZJYEMa9S1L3LsZ30Q-xrRsxPYiLSts'
 };
 
 webpush.setVapidDetails(
