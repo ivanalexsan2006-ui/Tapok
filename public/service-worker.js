@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tapok-v1';
+const CACHE_NAME = 'tapok-v7';
 
 self.addEventListener('install', (event) => {
     console.log('👷 Service Worker установлен');
@@ -7,11 +7,24 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
     console.log('👷 Service Worker активирован');
+    
+    // Очищаем старые кэши
+    event.waitUntil(
+        caches.keys().then((keyList) => {
+            return Promise.all(keyList.map((key) => {
+                if (key !== CACHE_NAME) {
+                    console.log('🗑️ Удаляем старый кэш:', key);
+                    return caches.delete(key);
+                }
+            }));
+        })
+    );
+    
     event.waitUntil(clients.claim());
 });
 
 self.addEventListener('push', function(event) {
-    console.log('📩 Получено push-уведомление', event);
+    console.log('📩 Получено push-уведомление');
     
     let data = {};
     
@@ -23,8 +36,10 @@ self.addEventListener('push', function(event) {
     } catch (e) {
         console.error('❌ Ошибка парсинга push:', e);
         data = {
-            title: 'Tapok',
+            title: '💬 Tapok',
             body: 'Новое сообщение',
+            icon: '/icons/icon-192.png',
+            badge: '/icons/icon-192.png',
             data: { url: '/' }
         };
     }
@@ -38,15 +53,17 @@ self.addEventListener('push', function(event) {
         actions: data.actions || [
             {
                 action: 'open',
-                title: 'Открыть чат'
+                title: '📱 Открыть'
+            },
+            {
+                action: 'close',
+                title: '✕ Закрыть'
             }
         ],
-        dir: 'auto',
-        lang: 'ru',
+        tag: data.tag || 'tapok',
         renotify: true,
-        requireInteraction: true,
+        requireInteraction: false,
         silent: false,
-        tag: data.data?.chatId ? `chat-${data.data.chatId}` : 'tapok',
         timestamp: Date.now()
     };
     
@@ -56,11 +73,13 @@ self.addEventListener('push', function(event) {
 });
 
 self.addEventListener('notificationclick', function(event) {
-    console.log('👆 Нажатие на уведомление:', event.action);
+    console.log('👆 Нажатие на уведомление, действие:', event.action);
     
     event.notification.close();
     
-    if (event.action === 'close') return;
+    if (event.action === 'close') {
+        return;
+    }
     
     const urlToOpen = event.notification.data?.url || '/';
     
@@ -76,12 +95,11 @@ self.addEventListener('notificationclick', function(event) {
                 }
             }
             
-            for (let client of clientList) {
-                if ('focus' in client) {
-                    console.log('🔍 Фокус на другом окне');
-                    client.navigate(urlToOpen);
-                    return client.focus();
-                }
+            if (clientList.length > 0) {
+                console.log('🔍 Используем другое окно');
+                return clientList[0].navigate(urlToOpen).then(() => {
+                    return clientList[0].focus();
+                });
             }
             
             console.log('🆕 Открываем новое окно');
@@ -91,9 +109,17 @@ self.addEventListener('notificationclick', function(event) {
 });
 
 self.addEventListener('fetch', (event) => {
+    if (event.request.url.includes('/api/')) {
+        return;
+    }
+    
     event.respondWith(
-        fetch(event.request).catch(() => {
-            return caches.match(event.request);
-        })
+        fetch(event.request)
+            .then(response => {
+                return response;
+            })
+            .catch(() => {
+                return caches.match(event.request);
+            })
     );
 });
