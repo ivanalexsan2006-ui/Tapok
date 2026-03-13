@@ -2,8 +2,27 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Tapok · вход</title>
+    
+    <!-- Иконки для всех устройств -->
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="/icons/icon-152.png">
+    
+    <!-- Манифест -->
+    <link rel="manifest" href="/manifest.json">
+    
+    <!-- Цвета для мобильных -->
+    <meta name="theme-color" content="#2a6ee0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Tapok">
+    
+    <!-- Для Android -->
+    <meta name="mobile-web-app-capable" content="yes">
+    
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -21,8 +40,14 @@
             border-radius: 20px;
             width: 90%;
             max-width: 400px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
         }
-        h1 { text-align: center; margin-bottom: 30px; color: #2a6ee0; }
+        h1 { 
+            text-align: center; 
+            margin-bottom: 30px; 
+            color: #2a6ee0;
+            font-size: 32px;
+        }
         .tab {
             display: flex;
             margin-bottom: 20px;
@@ -36,6 +61,7 @@
             color: #8a9aa8;
             cursor: pointer;
             font-size: 16px;
+            transition: color 0.2s;
         }
         .tab button.active {
             color: #2a6ee0;
@@ -43,23 +69,29 @@
         }
         input, button {
             width: 100%;
-            padding: 12px;
+            padding: 14px;
             margin: 8px 0;
-            border-radius: 8px;
+            border-radius: 10px;
             border: none;
             font-size: 16px;
         }
         input {
             background: #17212b;
             color: white;
+            outline: none;
+        }
+        input:focus {
+            outline: 2px solid #2a6ee0;
         }
         button {
             background: #2a6ee0;
             color: white;
             font-weight: bold;
             cursor: pointer;
+            transition: background 0.2s;
         }
         button:hover { background: #1e4fa0; }
+        button:active { transform: scale(0.98); }
         .error {
             color: #f44336;
             margin-top: 10px;
@@ -70,8 +102,12 @@
         .file-input {
             padding: 8px;
             background: #17212b;
-            border-radius: 8px;
+            border-radius: 10px;
             margin: 8px 0;
+        }
+        .file-input input {
+            margin: 0;
+            padding: 8px;
         }
     </style>
 </head>
