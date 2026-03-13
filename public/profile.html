@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tapok · профиль</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #17212b;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #2a6ee0;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            position: sticky;
+            top: 0;
+        }
+        .back-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .header h1 {
+            font-size: 20px;
+            flex: 1;
+        }
+        .profile-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .avatar-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        .profile-avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: #242f3d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            color: white;
+            overflow: hidden;
+            border: 3px solid #2a6ee0;
+        }
+        .profile-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .change-avatar-btn {
+            position: absolute;
+            bottom: 5px;
+            right: 5px;
+            background: #2a6ee0;
+            border: none;
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .info-card {
+            background: #242f3d;
+            border-radius: 12px;
+            padding: 20px;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 20px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #1e2b38;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            color: #8a9aa8;
+        }
+        .info-value {
+            font-weight: bold;
+        }
+        .edit-btn {
+            background: transparent;
+            border: 1px solid #2a6ee0;
+            color: #2a6ee0;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-left: 10px;
+        }
+        .status-badge {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-online { background: #4caf50; }
+        .status-offline { background: #9e9e9e; }
+        
+        .modal {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal.hidden { display: none; }
+        .modal-content {
+            background: #242f3d;
+            padding: 20px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 350px;
+        }
+        .modal-content h3 {
+            margin-bottom: 15px;
+        }
+        .modal-content input {
+            width: 100%;
+            padding: 12px;
+            background: #17212b;
+            border: none;
+            border-radius: 6px;
+            color: white;
+            margin-bottom: 15px;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .modal-buttons button {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .save-btn {
+            background: #2a6ee0;
+            color: white;
+        }
+        .cancel-btn {
+            background: #1e2b38;
+            color: white;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-btn" onclick="window.location.href='/chats.html'">←</button>
+        <h1>Мой профиль</h1>
+    </div>
+
+    <div class="profile-content">
+        <div class="avatar-container">
+            <div class="profile-avatar" id="avatar-display">
+                <span id="avatar-placeholder">?</span>
+                <img id="avatar-img" src="" style="display: none;">
+            </div>
+            <button class="change-avatar-btn" onclick="document.getElementById('avatar-input').click()">✎</button>
+            <input type="file" id="avatar-input" accept="image/*" style="display: none;">
+        </div>
+
+        <div class="info-card">
+            <div class="info-row">
+                <span class="info-label">Имя</span>
+                <span class="info-value" id="profile-name">Загрузка...</span>
+                <button class="edit-btn" onclick="showEditNameModal()">✎</button>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Телефон</span>
+                <span class="info-value" id="profile-phone"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Статус</span>
+                <span class="info-value" id="profile-status">
+                    <span class="status-badge" id="status-badge"></span>
+                    <span id="status-text"></span>
+                </span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">ID пользователя</span>
+                <span class="info-value" id="profile-id"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модалка редактирования имени -->
+    <div class="modal hidden" id="edit-name-modal">
+        <div class="modal-content">
+            <h3>Изменить имя</h3>
+            <input type="text" id="edit-name-input" placeholder="Новое имя">
+            <div class="modal-buttons">
+                <button class="save-btn" onclick="updateName()">Сохранить</button>
+                <button class="cancel-btn" onclick="closeModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        let ws;
+
+        if (!localStorage.getItem('token')) {
+            window.location.href = '/';
+        }
+
+        // Загрузка данных профиля
+        async function loadProfile() {
+            try {
+                const res = await fetch('/api/users/me', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                
+                if (!res.ok) throw new Error('Ошибка загрузки');
+                
+                const user = await res.json();
+                displayProfile(user);
+            } catch (e) {
+                console.error('Ошибка загрузки профиля:', e);
+            }
+        }
+
+        function displayProfile(user) {
+            document.getElementById('profile-name').textContent = user.name || 'Без имени';
+            document.getElementById('profile-phone').textContent = user.phone || '';
+            document.getElementById('profile-id').textContent = `#${user.id}`;
+            
+            const statusBadge = document.getElementById('status-badge');
+            const statusText = document.getElementById('status-text');
+            
+            if (user.status === 'online') {
+                statusBadge.className = 'status-badge status-online';
+                statusText.textContent = 'онлайн';
+            } else {
+                statusBadge.className = 'status-badge status-offline';
+                statusText.textContent = 'офлайн';
+            }
+
+            if (user.avatar) {
+                document.getElementById('avatar-placeholder').style.display = 'none';
+                const img = document.getElementById('avatar-img');
+                img.src = user.avatar;
+                img.style.display = 'block';
+            } else {
+                document.getElementById('avatar-placeholder').style.display = 'block';
+                document.getElementById('avatar-placeholder').textContent = user.name ? user.name[0].toUpperCase() : '?';
+            }
+        }
+
+        // Смена аватара
+        document.getElementById('avatar-input').addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('avatar', file);
+
+            try {
+                const res = await fetch('/api/users/avatar', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    },
+                    body: formData
+                });
+
+                if (res.ok) {
+                    const data = await res.json();
+                    // Обновляем аватар
+                    document.getElementById('avatar-placeholder').style.display = 'none';
+                    const img = document.getElementById('avatar-img');
+                    img.src = data.avatar + '?t=' + Date.now(); // Кэш-бастер
+                    img.style.display = 'block';
+                    
+                    // Обновляем в localStorage
+                    const user = JSON.parse(localStorage.getItem('user') || '{}');
+                    user.avatar = data.avatar;
+                    localStorage.setItem('user', JSON.stringify(user));
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки аватара:', e);
+                alert('Не удалось загрузить аватар');
+            }
+        });
+
+        // Редактирование имени
+        function showEditNameModal() {
+            document.getElementById('edit-name-input').value = document.getElementById('profile-name').textContent;
+            document.getElementById('edit-name-modal').classList.remove('hidden');
+        }
+
+        async function updateName() {
+            const newName = document.getElementById('edit-name-input').value.trim();
+            if (!newName) return;
+
+            try {
+                const res = await fetch('/api/users/name', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name: newName })
+                });
+
+                if (res.ok) {
+                    document.getElementById('profile-name').textContent = newName;
+                    
+                    // Обновляем в localStorage
+                    const user = JSON.parse(localStorage.getItem('user') || '{}');
+                    user.name = newName;
+                    localStorage.setItem('user', JSON.stringify(user));
+                    
+                    closeModal();
+                } else {
+                    alert('Ошибка при обновлении имени');
+                }
+            } catch (e) {
+                console.error('Ошибка:', e);
+                alert('Ошибка соединения');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('edit-name-modal').classList.add('hidden');
+        }
+
+        // Закрытие по клику вне модалки
+        document.getElementById('edit-name-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+
+        // WebSocket для статуса
+        function connectWS() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type: 'auth',
+                    token: localStorage.getItem('token')
+                }));
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type === 'user_status' && data.userId === currentUser.id) {
+                    const statusBadge = document.getElementById('status-badge');
+                    const statusText = document.getElementById('status-text');
+                    
+                    if (data.status === 'online') {
+                        statusBadge.className = 'status-badge status-online';
+                        statusText.textContent = 'онлайн';
+                    } else {
+                        statusBadge.className = 'status-badge status-offline';
+                        statusText.textContent = 'офлайн';
+                    }
+                }
+            };
+        }
+
+        loadProfile();
+        connectWS();
+    </script>
+</body>
+</html>
