@@ -9,6 +9,10 @@ const fs = require('fs');
 const cors = require('cors');
 const webpush = require('web-push');
 
+// Добавляем поддержку кодировки
+process.env.LANG = 'en_US.UTF-8';
+process.env.LC_ALL = 'en_US.UTF-8';
+
 const app = express();
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
@@ -56,6 +60,7 @@ app.use((req, res, next) => {
 // ========== СОЗДАНИЕ ТАБЛИЦ ==========
 async function initDb() {
     try {
+        // Пользователи
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -69,6 +74,7 @@ async function initDb() {
             )
         `);
 
+        // Чаты
         await pool.query(`
             CREATE TABLE IF NOT EXISTS chats (
                 id SERIAL PRIMARY KEY,
@@ -79,6 +85,7 @@ async function initDb() {
             )
         `);
 
+        // Участники чатов
         await pool.query(`
             CREATE TABLE IF NOT EXISTS chat_participants (
                 chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
@@ -89,6 +96,7 @@ async function initDb() {
             )
         `);
 
+        // Сообщения
         await pool.query(`
             CREATE TABLE IF NOT EXISTS messages (
                 id SERIAL PRIMARY KEY,
@@ -103,6 +111,7 @@ async function initDb() {
             )
         `);
 
+        // Непрочитанные
         await pool.query(`
             CREATE TABLE IF NOT EXISTS unread_messages (
                 user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -177,6 +186,10 @@ app.get('/chats.html', (req, res) => {
 
 app.get('/chat.html', (req, res) => {
     res.sendFile(__dirname + '/public/chat.html');
+});
+
+app.get('/profile.html', (req, res) => {
+    res.sendFile(__dirname + '/public/profile.html');
 });
 
 // ========== MIDDLEWARE ==========
@@ -285,6 +298,69 @@ app.post('/api/login', async (req, res) => {
             user
         });
 
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// ========== НОВЫЕ ЭНДПОИНТЫ ДЛЯ ПРОФИЛЯ ==========
+
+// Получить данные текущего пользователя
+app.get('/api/users/me', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, phone, name, avatar, status, last_seen FROM users WHERE id = $1',
+            [req.user.userId]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Обновить имя пользователя
+app.put('/api/users/name', authenticateToken, async (req, res) => {
+    const { name } = req.body;
+    
+    if (!name || name.trim().length === 0) {
+        return res.status(400).json({ error: 'Имя не может быть пустым' });
+    }
+    
+    try {
+        await pool.query(
+            'UPDATE users SET name = $1 WHERE id = $2',
+            [name.trim(), req.user.userId]
+        );
+        
+        res.json({ success: true, name: name.trim() });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Обновить аватар
+app.post('/api/users/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ error: 'Файл не загружен' });
+    }
+    
+    try {
+        const avatarUrl = `/avatars/${req.file.filename}`;
+        
+        await pool.query(
+            'UPDATE users SET avatar = $1 WHERE id = $2',
+            [avatarUrl, req.user.userId]
+        );
+        
+        res.json({ success: true, avatar: avatarUrl });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Ошибка сервера' });
