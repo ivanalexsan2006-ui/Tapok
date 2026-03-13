@@ -24,11 +24,9 @@
         body.dark .search-input { background: #17212b; color: white; }
         body.dark .tab-btn { color: #8a9aa8; }
         body.dark .tab-btn.active { color: #2a6ee0; border-bottom-color: #2a6ee0; }
-        body.dark .settings-btn { 
-            background: transparent; 
-            border: 1px solid white; 
-            color: white; 
-        }
+        body.dark .search-results { background: #242f3d; }
+        body.dark .search-result-item:hover { background: #17212b; }
+        body.dark .no-results { color: #8a9aa8; }
         
         /* ===== СВЕТЛАЯ ТЕМА ===== */
         body.light {
@@ -55,19 +53,10 @@
         }
         body.light .tab-btn { color: #666; }
         body.light .tab-btn.active { color: #2a6ee0; border-bottom-color: #2a6ee0; }
-        body.light .loading { color: #666; }
+        body.light .search-results { background: white; border: 1px solid #ddd; }
+        body.light .search-result-item:hover { background: #f0f0f0; }
         body.light .no-results { color: #666; }
-        body.light .close-btn { color: #000000; }
-        body.light .create-btn { color: white; }
-        body.light .settings-btn,
-        body.light .profile-btn { 
-            border-color: white; 
-            color: white; 
-        }
-        body.light .settings-btn:hover,
-        body.light .profile-btn:hover { 
-            background: rgba(255,255,255,0.1); 
-        }
+        body.light .loading { color: #666; }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -113,6 +102,8 @@
         
         .search {
             padding: 10px;
+            position: relative;
+            z-index: 10;
         }
         .search input {
             width: 100%;
@@ -124,37 +115,76 @@
             transition: background 0.3s, color 0.3s, border 0.3s;
         }
         
+        /* Результаты поиска - занимают всю область вместо списка чатов */
         .search-results {
-            position: absolute;
-            top: 180px;
-            left: 10px;
-            right: 10px;
-            background: inherit;
-            border-radius: 12px;
-            max-height: 300px;
+            flex: 1;
             overflow-y: auto;
-            z-index: 1000;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            padding: 10px;
             display: none;
+            flex-direction: column;
         }
-        .search-results.show {
-            display: block;
+        
+        .search-results.active {
+            display: flex;
         }
+        
         .search-result-item {
             display: flex;
             align-items: center;
             padding: 12px;
-            border-bottom: 1px solid rgba(128,128,128,0.2);
+            border-radius: 10px;
+            margin-bottom: 5px;
             cursor: pointer;
+            transition: background 0.2s;
         }
-        .search-result-item:last-child {
-            border-bottom: none;
+        
+        .search-result-item .avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #2a6ee0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            font-size: 20px;
+            overflow: hidden;
+            flex-shrink: 0;
+            color: white;
+        }
+        .search-result-item .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        .search-result-info {
+            flex: 1;
+        }
+        .search-result-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .search-result-username {
+            font-size: 12px;
+            color: #8a9aa8;
+        }
+        
+        .no-results {
+            text-align: center;
+            padding: 40px 20px;
+            font-size: 16px;
         }
         
         .chats-list {
             flex: 1;
             overflow-y: auto;
             padding: 10px;
+            display: block;
+        }
+        
+        .chats-list.hidden {
+            display: none;
         }
         
         .chat-item {
@@ -180,6 +210,7 @@
             overflow: hidden;
             flex-shrink: 0;
             transition: background 0.3s;
+            color: white;
         }
         .avatar img {
             width: 100%;
@@ -194,13 +225,17 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            color: #8a9aa8;
         }
         
         .chat-meta { 
             text-align: right;
             margin-left: 10px;
         }
-        .chat-time { font-size: 12px; }
+        .chat-time { 
+            font-size: 12px; 
+            color: #8a9aa8;
+        }
         .unread-badge {
             background: #2a6ee0;
             color: white;
@@ -266,6 +301,7 @@
             font-size: 24px;
             cursor: pointer;
             padding: 0 10px;
+            color: inherit;
         }
         
         /* Табы */
@@ -283,6 +319,7 @@
             cursor: pointer;
             border-bottom: 2px solid transparent;
             transition: all 0.2s;
+            color: inherit;
         }
         
         .tab-pane {
@@ -292,7 +329,6 @@
             display: block;
         }
         
-        /* Стили для списков */
         .user-item {
             display: flex;
             align-items: center;
@@ -311,7 +347,6 @@
         }
         
         .loading { text-align: center; padding: 20px; }
-        .no-results { text-align: center; padding: 20px; }
         
         .search-input {
             width: 100%;
@@ -345,6 +380,8 @@
             border: 1px solid rgba(128,128,128,0.3);
             border-radius: 5px;
             font-size: 16px;
+            background: inherit;
+            color: inherit;
         }
         
         .selected-count {
@@ -372,9 +409,10 @@
             <input type="text" id="search-input" placeholder="Поиск по чатам..." autocomplete="off">
         </div>
 
-        <!-- Результаты поиска -->
+        <!-- Результаты поиска (показываются вместо списка чатов) -->
         <div class="search-results" id="search-results"></div>
 
+        <!-- Список чатов (скрывается при поиске) -->
         <div class="chats-list" id="chats-list">
             <div class="loading">Загрузка чатов...</div>
         </div>
@@ -457,12 +495,9 @@
             const list = document.getElementById('chats-list');
             
             try {
-                console.log('Загружаем чаты...');
                 const res = await fetch('/api/chats', {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
-                
-                console.log('Статус ответа:', res.status);
                 
                 if (!res.ok) {
                     if (res.status === 401) {
@@ -473,7 +508,6 @@
                 }
                 
                 const chats = await res.json();
-                console.log('Получены чаты:', chats);
                 
                 if (!chats || chats.length === 0) {
                     list.innerHTML = '<div class="loading">Нет чатов. Нажми + чтобы начать</div>';
@@ -482,11 +516,10 @@
                 
                 displayChats(chats);
             } catch (e) {
-                console.error('❌ Ошибка загрузки чатов:', e);
+                console.error('Ошибка загрузки чатов:', e);
                 list.innerHTML = `
                     <div class="loading" style="color: #f44336;">
                         Ошибка загрузки<br>
-                        <small>${e.message}</small><br>
                         <button onclick="loadChats()" style="margin-top:10px; padding:8px 20px; background:#2a6ee0; border:none; color:white; border-radius:5px;">🔄 Повторить</button>
                     </div>
                 `;
@@ -533,15 +566,27 @@
             }).join('');
         }
 
-        // ===== ПОИСК ПО ЧАТАМ =====
-        document.getElementById('search-input').addEventListener('input', (e) => {
+        // ===== НОВЫЙ ПОИСК ПО ЧАТАМ (ИСПРАВЛЕННЫЙ) =====
+        const searchInput = document.getElementById('search-input');
+        const chatsList = document.getElementById('chats-list');
+        const searchResults = document.getElementById('search-results');
+
+        searchInput.addEventListener('input', (e) => {
             const query = e.target.value.trim();
             clearTimeout(searchTimeout);
             
-            if (query.length < 2) {
-                document.getElementById('search-results').classList.remove('show');
+            if (query.length === 0) {
+                // Пустой поиск - показываем список чатов, убираем результаты
+                chatsList.classList.remove('hidden');
+                searchResults.classList.remove('active');
+                searchResults.innerHTML = '';
                 return;
             }
+            
+            // Скрываем список чатов, показываем результаты
+            chatsList.classList.add('hidden');
+            searchResults.classList.add('active');
+            searchResults.innerHTML = '<div class="loading">Поиск...</div>';
             
             searchTimeout = setTimeout(() => searchChats(query), 300);
         });
@@ -556,31 +601,27 @@
                 displaySearchResults(results);
             } catch (e) {
                 console.error('Ошибка поиска:', e);
+                searchResults.innerHTML = '<div class="no-results">❌ Ошибка поиска</div>';
             }
         }
 
         function displaySearchResults(results) {
-            const resultsDiv = document.getElementById('search-results');
-            
-            if (results.length === 0) {
-                resultsDiv.innerHTML = '<div class="no-results">Ничего не найдено</div>';
-                resultsDiv.classList.add('show');
+            if (!results || results.length === 0) {
+                searchResults.innerHTML = '<div class="no-results">❌ Ничего не найдено</div>';
                 return;
             }
 
-            resultsDiv.innerHTML = results.map(r => `
+            searchResults.innerHTML = results.map(r => `
                 <div class="search-result-item" onclick="openChat(${r.id})">
-                    <div class="avatar" style="width:40px; height:40px; margin-right:10px;">
-                        ${r.type === 'group' ? '👥' : (r.avatar ? `<img src="${r.avatar}">` : r.name[0])}
+                    <div class="avatar">
+                        ${r.type === 'group' ? '👥' : (r.avatar ? `<img src="${r.avatar}">` : (r.name ? r.name[0].toUpperCase() : '?'))}
                     </div>
-                    <div>
-                        <div>${r.name}</div>
-                        ${r.username ? `<div style="font-size:12px; color:#8a9aa8;">@${r.username}</div>` : ''}
+                    <div class="search-result-info">
+                        <div class="search-result-name">${r.name}</div>
+                        ${r.username ? `<div class="search-result-username">@${r.username}</div>` : ''}
                     </div>
                 </div>
             `).join('');
-            
-            resultsDiv.classList.add('show');
         }
 
         // ===== ТАБЫ =====
@@ -622,14 +663,14 @@
             const list = document.getElementById('contacts-list');
             
             if (!contacts || contacts.length === 0) {
-                list.innerHTML = '<div class="no-results">Нет контактов в Tapok</div>';
+                list.innerHTML = '<div class="no-results">📱 Нет контактов в Tapok</div>';
                 return;
             }
 
             list.innerHTML = contacts.map(c => `
                 <div class="user-item" onclick="openUserProfile(${c.id})">
                     <div class="avatar" style="width:40px; height:40px; margin-right:10px;">
-                        ${c.avatar ? `<img src="${c.avatar}">` : (c.name ? c.name[0] : '?')}
+                        ${c.avatar ? `<img src="${c.avatar}">` : (c.name ? c.name[0].toUpperCase() : '?')}
                     </div>
                     <div>
                         <div>${c.custom_name || c.contact_name || c.name}</div>
@@ -669,14 +710,14 @@
             const list = document.getElementById('search-results-list');
             
             if (!users || users.length === 0) {
-                list.innerHTML = '<div class="no-results">Ничего не найдено</div>';
+                list.innerHTML = '<div class="no-results">❌ Ничего не найдено</div>';
                 return;
             }
 
             list.innerHTML = users.map(user => `
                 <div class="user-item" onclick="openUserProfile(${user.id})">
                     <div class="avatar" style="width:40px; height:40px; margin-right:10px;">
-                        ${user.avatar ? `<img src="${user.avatar}">` : (user.name ? user.name[0] : '?')}
+                        ${user.avatar ? `<img src="${user.avatar}">` : (user.name ? user.name[0].toUpperCase() : '?')}
                     </div>
                     <div>
                         <div>${user.name || 'Без имени'}</div>
@@ -707,7 +748,7 @@
             updateSelectedCount();
             
             if (!users || users.length === 0) {
-                list.innerHTML = '<div class="no-results">Нет пользователей для добавления</div>';
+                list.innerHTML = '<div class="no-results">👥 Нет пользователей для добавления</div>';
                 return;
             }
 
@@ -715,7 +756,7 @@
                 <div class="user-item" onclick="toggleGroupUser(${user.id})">
                     <input type="checkbox" class="user-checkbox" id="user-${user.id}" onclick="event.stopPropagation()">
                     <div class="avatar" style="width:40px; height:40px; margin-right:10px;">
-                        ${user.avatar ? `<img src="${user.avatar}">` : (user.name ? user.name[0] : '?')}
+                        ${user.avatar ? `<img src="${user.avatar}">` : (user.name ? user.name[0].toUpperCase() : '?')}
                     </div>
                     <div>
                         <div>${user.custom_name || user.name}</div>
@@ -807,30 +848,13 @@
         document.addEventListener('keydown', function(e) {
             if (e.key === 'Escape') {
                 closeModal();
-                document.getElementById('search-results').classList.remove('show');
+                // Очищаем поиск при закрытии
+                searchInput.value = '';
+                chatsList.classList.remove('hidden');
+                searchResults.classList.remove('active');
+                searchResults.innerHTML = '';
             }
         });
-
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.search') && !e.target.closest('.search-results')) {
-                document.getElementById('search-results').classList.remove('show');
-            }
-        });
-
-        // Для отладки
-        async function testAPI() {
-            try {
-                const res = await fetch('/api/chats', {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                });
-                console.log('🔍 Тест API:', res.status);
-                const data = await res.json();
-                console.log('📦 Данные:', data);
-            } catch (e) {
-                console.error('❌ Тест API ошибка:', e);
-            }
-        }
-        testAPI();
 
         loadChats();
     </script>
