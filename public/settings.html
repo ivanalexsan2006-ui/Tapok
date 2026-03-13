@@ -19,6 +19,8 @@
         body.dark .setting-desc { color: #8a9aa8; }
         body.dark .select { background: #1e2b38; color: white; }
         body.dark .theme-btn { background: #1e2b38; color: white; }
+        body.dark .contacts-stats { color: #8a9aa8; }
+        body.dark .contacts-btn { background: #2a6ee0; color: white; }
         
         /* ===== СВЕТЛАЯ ТЕМА ===== */
         body.light {
@@ -48,6 +50,12 @@
             background: #2a6ee0;
             color: white;
             border-color: #2a6ee0;
+        }
+        body.light .contacts-stats { color: #666; }
+        body.light .contacts-btn { 
+            background: #2a6ee0; 
+            color: white;
+            border: none;
         }
         body.light .back-btn { color: white; }
         
@@ -127,6 +135,59 @@
         .setting-desc {
             font-size: 12px;
             transition: color 0.3s;
+        }
+        
+        /* ===== НОВЫЙ БЛОК КОНТАКТОВ ===== */
+        .contacts-block {
+            padding: 15px;
+        }
+        
+        .contacts-stats {
+            font-size: 14px;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: rgba(128,128,128,0.1);
+            border-radius: 8px;
+        }
+        
+        .contacts-btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            transition: all 0.2s;
+            margin-bottom: 10px;
+        }
+        
+        .contacts-btn:active {
+            transform: scale(0.98);
+        }
+        
+        .contacts-btn.secondary {
+            background: transparent;
+            border: 1px solid #2a6ee0;
+            color: #2a6ee0;
+        }
+        
+        .contacts-note {
+            font-size: 12px;
+            text-align: center;
+            margin-top: 10px;
+            opacity: 0.7;
+        }
+        
+        .permission-denied {
+            color: #f44336;
+            font-size: 12px;
+            text-align: center;
+            margin-top: 10px;
         }
         
         /* Toggle Switch */
@@ -213,6 +274,25 @@
             padding: 50px;
             color: #8a9aa8;
         }
+        
+        .toast {
+            position: fixed;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #2a6ee0;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            z-index: 1000;
+            animation: fadeIn 0.3s;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translate(-50%, 20px); }
+            to { opacity: 1; transform: translate(-50%, 0); }
+        }
     </style>
 </head>
 <body class="dark">
@@ -231,6 +311,7 @@
         }
 
         let settings = {};
+        let contactsCount = 0;
 
         // Загружаем тему при старте
         const savedTheme = localStorage.getItem('theme') || 'dark';
@@ -246,14 +327,29 @@
                 
                 settings = await res.json();
                 
-                // Если тема не совпадает с сохраненной в localStorage, обновляем
                 if (settings.theme !== savedTheme) {
                     settings.theme = savedTheme;
                 }
                 
+                await loadContactsCount();
                 displaySettings();
             } catch (e) {
                 console.error('Ошибка загрузки настроек:', e);
+            }
+        }
+
+        async function loadContactsCount() {
+            try {
+                const res = await fetch('/api/contacts', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                
+                const contacts = await res.json();
+                contactsCount = contacts.length;
+            } catch (e) {
+                console.error('Ошибка загрузки контактов:', e);
             }
         }
 
@@ -276,6 +372,30 @@
                     </div>
                 </div>
 
+                <!-- Контакты (НОВЫЙ БЛОК) -->
+                <div class="section">
+                    <div class="section-title">📱 Контакты</div>
+                    <div class="contacts-block">
+                        <div class="contacts-stats">
+                            Загружено контактов в Tapok: <strong>${contactsCount}</strong>
+                        </div>
+                        
+                        <button class="contacts-btn" onclick="loadContactsFromPhone()">
+                            📱 Загрузить контакты с телефона
+                        </button>
+                        
+                        <button class="contacts-btn secondary" onclick="refreshContacts()">
+                            🔄 Обновить список контактов
+                        </button>
+                        
+                        <div class="contacts-note">
+                            Будут показаны только те, кто уже использует Tapok
+                        </div>
+                        
+                        <div id="contacts-status"></div>
+                    </div>
+                </div>
+
                 <!-- Приватность -->
                 <div class="section">
                     <div class="section-title">Приватность</div>
@@ -283,7 +403,7 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Кто может писать</div>
-                            <div class="setting-desc">Ограничьте круг лиц, которые могут вам писать</div>
+                            <div class="setting-desc">Ограничьте круг лиц</div>
                         </div>
                         <select class="select" onchange="setWhoCanWrite(this.value)">
                             <option value="all" ${settings.who_can_write === 'all' ? 'selected' : ''}>Все</option>
@@ -294,7 +414,7 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Скрыть телефон</div>
-                            <div class="setting-desc">Номер не будет виден другим пользователям</div>
+                            <div class="setting-desc">Номер не будет виден другим</div>
                         </div>
                         <label class="switch">
                             <input type="checkbox" ${settings.hide_phone ? 'checked' : ''} onchange="setHidePhone(this.checked)">
@@ -305,7 +425,7 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Скрыть статус</div>
-                            <div class="setting-desc">Никто не будет видеть "онлайн/офлайн"</div>
+                            <div class="setting-desc">Никто не видит "онлайн/офлайн"</div>
                         </div>
                         <label class="switch">
                             <input type="checkbox" ${settings.hide_status ? 'checked' : ''} onchange="setHideStatus(this.checked)">
@@ -316,25 +436,12 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Скрыть аватар</div>
-                            <div class="setting-desc">Фото профиля не будет видно другим</div>
+                            <div class="setting-desc">Фото профиля не видно другим</div>
                         </div>
                         <label class="switch">
                             <input type="checkbox" ${settings.hide_avatar ? 'checked' : ''} onchange="setHideAvatar(this.checked)">
                             <span class="slider"></span>
                         </label>
-                    </div>
-                </div>
-
-                <!-- Данные -->
-                <div class="section">
-                    <div class="section-title">Данные</div>
-                    
-                    <div class="setting-item">
-                        <div class="setting-info">
-                            <div class="setting-name">Очистить историю</div>
-                            <div class="setting-desc">Удалить все сообщения (необратимо)</div>
-                        </div>
-                        <button class="theme-btn" onclick="clearHistory()" style="flex: 0 0 auto; padding: 8px 15px;">Очистить</button>
                     </div>
                 </div>
 
@@ -345,18 +452,117 @@
                     <div class="setting-item">
                         <div class="setting-info">
                             <div class="setting-name">Версия</div>
-                            <div class="setting-desc">Tapok 7.0</div>
-                        </div>
-                    </div>
-                    
-                    <div class="setting-item">
-                        <div class="setting-info">
-                            <div class="setting-name">Разработчик</div>
-                            <div class="setting-desc">@ivanalexsan2006-ui</div>
+                            <div class="setting-desc">Tapok 7.1</div>
                         </div>
                     </div>
                 </div>
             `;
+        }
+
+        // ===== НОВАЯ ФУНКЦИЯ ЗАГРУЗКИ КОНТАКТОВ =====
+        async function loadContactsFromPhone() {
+            const statusDiv = document.getElementById('contacts-status');
+            
+            // Проверяем поддержку API контактов
+            if (!navigator.contacts || !navigator.contacts.select) {
+                statusDiv.innerHTML = '<div class="permission-denied">❌ Ваш браузер не поддерживает загрузку контактов</div>';
+                return;
+            }
+
+            try {
+                statusDiv.innerHTML = '<div class="contacts-stats">🔄 Запрос доступа к контактам...</div>';
+                
+                // Запрашиваем доступ к контактам
+                const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+                
+                if (!contacts || contacts.length === 0) {
+                    statusDiv.innerHTML = '<div class="permission-denied">❌ Нет доступа к контактам или список пуст</div>';
+                    return;
+                }
+
+                statusDiv.innerHTML = '<div class="contacts-stats">🔄 Синхронизация...</div>';
+
+                // Форматируем контакты
+                const formattedContacts = contacts.map(c => ({
+                    phone: c.tel?.[0]?.replace(/[^0-9+]/g, '') || '',
+                    name: c.name?.[0] || ''
+                })).filter(c => c.phone);
+
+                // Отправляем на сервер
+                const res = await fetch('/api/contacts/sync', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ contacts: formattedContacts })
+                });
+
+                if (res.ok) {
+                    const tapokContacts = await res.json();
+                    contactsCount = tapokContacts.length;
+                    
+                    // Обновляем отображение
+                    document.querySelector('.contacts-stats').innerHTML = 
+                        `Загружено контактов в Tapok: <strong>${contactsCount}</strong>`;
+                    
+                    statusDiv.innerHTML = `<div class="contacts-stats" style="color: #4caf50;">✅ Синхронизировано! Найдено ${contactsCount} контактов в Tapok</div>`;
+                    
+                    showToast(`Найдено ${contactsCount} контактов в Tapok`);
+                    
+                    // Убираем сообщение через 3 секунды
+                    setTimeout(() => {
+                        statusDiv.innerHTML = '';
+                    }, 3000);
+                } else {
+                    throw new Error('Ошибка синхронизации');
+                }
+
+            } catch (e) {
+                console.error('Ошибка доступа к контактам:', e);
+                statusDiv.innerHTML = '<div class="permission-denied">❌ Ошибка доступа к контактам</div>';
+            }
+        }
+
+        async function refreshContacts() {
+            const statusDiv = document.getElementById('contacts-status');
+            
+            try {
+                statusDiv.innerHTML = '<div class="contacts-stats">🔄 Обновление списка...</div>';
+                
+                const res = await fetch('/api/contacts', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                
+                const contacts = await res.json();
+                contactsCount = contacts.length;
+                
+                document.querySelector('.contacts-stats').innerHTML = 
+                    `Загружено контактов в Tapok: <strong>${contactsCount}</strong>`;
+                
+                statusDiv.innerHTML = `<div class="contacts-stats" style="color: #4caf50;">✅ Список обновлен</div>`;
+                
+                setTimeout(() => {
+                    statusDiv.innerHTML = '';
+                }, 2000);
+                
+            } catch (e) {
+                console.error('Ошибка обновления:', e);
+                statusDiv.innerHTML = '<div class="permission-denied">❌ Ошибка обновления</div>';
+            }
+        }
+
+        function showToast(text) {
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = text;
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
         }
 
         // ===== УПРАВЛЕНИЕ ТЕМОЙ =====
@@ -375,7 +581,6 @@
                 document.body.className = theme;
                 localStorage.setItem('theme', theme);
                 
-                // Обновляем активные кнопки
                 document.querySelectorAll('.theme-btn').forEach(btn => {
                     btn.classList.remove('active');
                 });
@@ -429,14 +634,6 @@
                 },
                 body: JSON.stringify({ hide_avatar: value })
             });
-        }
-
-        // ===== ОЧИСТКА ИСТОРИИ =====
-        async function clearHistory() {
-            if (!confirm('Вы уверены? Это действие нельзя отменить.')) return;
-            
-            // TODO: добавить API для очистки истории
-            alert('Функция в разработке');
         }
 
         loadSettings();
