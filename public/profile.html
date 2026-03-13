@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tapok · профиль</title>
+    <title>Tapok · мой профиль</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -173,6 +173,18 @@
             background: #1e2b38;
             color: white;
         }
+        .logout-btn {
+            width: 100%;
+            padding: 14px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+        }
         .hidden { display: none; }
     </style>
 </head>
@@ -214,6 +226,8 @@
                 <span class="info-value" id="profile-id"></span>
             </div>
         </div>
+
+        <button class="logout-btn" onclick="logout()">🚪 Выйти</button>
     </div>
 
     <!-- Модалка редактирования имени -->
@@ -300,13 +314,11 @@
 
                 if (res.ok) {
                     const data = await res.json();
-                    // Обновляем аватар
                     document.getElementById('avatar-placeholder').style.display = 'none';
                     const img = document.getElementById('avatar-img');
-                    img.src = data.avatar + '?t=' + Date.now(); // Кэш-бастер
+                    img.src = data.avatar + '?t=' + Date.now();
                     img.style.display = 'block';
                     
-                    // Обновляем в localStorage
                     const user = JSON.parse(localStorage.getItem('user') || '{}');
                     user.avatar = data.avatar;
                     localStorage.setItem('user', JSON.stringify(user));
@@ -340,7 +352,6 @@
                 if (res.ok) {
                     document.getElementById('profile-name').textContent = newName;
                     
-                    // Обновляем в localStorage
                     const user = JSON.parse(localStorage.getItem('user') || '{}');
                     user.name = newName;
                     localStorage.setItem('user', JSON.stringify(user));
@@ -359,10 +370,14 @@
             document.getElementById('edit-name-modal').classList.add('hidden');
         }
 
-        // Закрытие по клику вне модалки
         document.getElementById('edit-name-modal').addEventListener('click', function(e) {
             if (e.target === this) closeModal();
         });
+
+        function logout() {
+            localStorage.clear();
+            window.location.href = '/';
+        }
 
         // WebSocket для статуса
         function connectWS() {
