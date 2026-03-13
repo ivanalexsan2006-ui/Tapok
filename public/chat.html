@@ -27,6 +27,7 @@
         body.dark .context-menu { background: #242f3d; border: 1px solid #1e2b38; }
         body.dark .context-menu-item:hover { background: #1e2b38; }
         body.dark .pinned-messages { background: #1e2b38; }
+        body.dark .reply-preview { background: #1e2b38; border-left-color: #2a6ee0; }
         
         /* ===== СВЕТЛАЯ ТЕМА ===== */
         body.light {
@@ -74,6 +75,8 @@
         }
         body.light .context-menu-item:hover { background: #f0f0f0; }
         body.light .pinned-messages { background: #e5e5ea; }
+        body.light .reply-preview { background: #e5e5ea; border-left-color: #2a6ee0; }
+        body.light .reply-author { color: #2a6ee0; }
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
@@ -278,6 +281,58 @@
             color: #f44336;
         }
         
+        /* Блок ответа на сообщение (как в Telegram) */
+        .reply-preview {
+            margin: 0 10px 10px 10px;
+            padding: 10px 40px 10px 15px;
+            border-radius: 8px;
+            position: relative;
+            animation: slideDown 0.2s;
+            border-left: 4px solid #2a6ee0;
+            flex-shrink: 0;
+        }
+        
+        .reply-preview.hidden {
+            display: none;
+        }
+        
+        .reply-close {
+            position: absolute;
+            top: 50%;
+            right: 10px;
+            transform: translateY(-50%);
+            font-size: 20px;
+            cursor: pointer;
+            opacity: 0.7;
+            padding: 5px;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background 0.2s;
+        }
+        
+        .reply-close:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .reply-author {
+            font-weight: bold;
+            margin-bottom: 4px;
+            font-size: 13px;
+        }
+        
+        .reply-text {
+            font-size: 14px;
+            opacity: 0.8;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 80%;
+        }
+        
         @keyframes fadeIn {
             from { opacity: 0; }
             to { opacity: 1; }
@@ -286,6 +341,11 @@
         @keyframes scaleIn {
             from { transform: scale(0.8); opacity: 0; }
             to { transform: scale(1); opacity: 1; }
+        }
+        
+        @keyframes slideDown {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
         
         .message {
@@ -330,7 +390,7 @@
             text-align: right;
         }
         
-        /* Цитата ответа */
+        /* Цитата ответа в сообщении */
         .reply-quote {
             background: rgba(0,0,0,0.1);
             border-left: 3px solid #2a6ee0;
@@ -339,11 +399,12 @@
             border-radius: 6px;
             font-size: 13px;
         }
-        .reply-author {
+        .reply-quote-author {
             font-weight: bold;
             margin-bottom: 2px;
+            font-size: 12px;
         }
-        .reply-text {
+        .reply-quote-text {
             opacity: 0.8;
             white-space: nowrap;
             overflow: hidden;
@@ -628,6 +689,14 @@
 
     <div class="input-area">
         <div class="preview-area hidden" id="preview-area"></div>
+        
+        <!-- Блок ответа на сообщение (как в Telegram) -->
+        <div class="reply-preview hidden" id="reply-preview">
+            <div class="reply-close" onclick="cancelReply()">✕</div>
+            <div class="reply-author" id="reply-author"></div>
+            <div class="reply-text" id="reply-text"></div>
+        </div>
+        
         <div class="input-wrapper">
             <button class="attach-btn" onclick="document.getElementById('file-input').click()">📎</button>
             <input type="text" class="message-input" id="message-input" placeholder="Сообщение" autocomplete="off">
@@ -658,6 +727,10 @@
         let selectedMessageElement = null;
         let canPin = false;
         let isGroup = false;
+
+        // Для ответа на сообщение
+        let replyToMessageId = null;
+        let replyToMessageData = null;
 
         if (!localStorage.getItem('token')) {
             window.location.href = '/';
@@ -873,6 +946,16 @@
 
             let content = '';
             
+            // Показываем цитату если это ответ
+            if (msg.reply_to) {
+                content += `
+                    <div class="reply-quote">
+                        <div class="reply-quote-author">${msg.reply_to.user_name}</div>
+                        <div class="reply-quote-text">${msg.reply_to.text || 'Медиа'}</div>
+                    </div>
+                `;
+            }
+            
             // Добавляем имя отправителя для групповых чатов
             if (isTheir && isGroup) {
                 content += `<div class="message-sender">${msg.custom_name || msg.user_name}</div>`;
@@ -911,7 +994,7 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
 
-        // ===== НОВОЕ УМНОЕ КОНТЕКСТНОЕ МЕНЮ =====
+        // ===== КОНТЕКСТНОЕ МЕНЮ =====
         function showContextMenu(event, message, element) {
             event.preventDefault();
             
@@ -1014,10 +1097,7 @@
 
         function replyToMessage() {
             if (selectedMessage) {
-                const input = document.getElementById('message-input');
-                input.value = `↩️ ${selectedMessage.user_name}: ${selectedMessage.text || 'Медиа'} `;
-                input.focus();
-                showToast('Ответ на сообщение');
+                setReply(selectedMessage);
             }
             closeContextMenu();
         }
@@ -1075,6 +1155,33 @@
             }
             
             closeContextMenu();
+        }
+
+        // ===== НОВЫЕ ФУНКЦИИ ДЛЯ ОТВЕТА (КАК В TELEGRAM) =====
+        function setReply(message) {
+            replyToMessageId = message.id;
+            replyToMessageData = message;
+            
+            const preview = document.getElementById('reply-preview');
+            const author = document.getElementById('reply-author');
+            const text = document.getElementById('reply-text');
+            
+            author.textContent = message.user_name;
+            text.textContent = message.text || 
+                (message.media_type === 'photo' ? '📷 Фото' : 
+                 message.media_type === 'video' ? '🎥 Видео' : 
+                 message.voice_url ? '🎤 Голосовое' : 'Сообщение');
+            
+            preview.classList.remove('hidden');
+            
+            // Фокус на поле ввода
+            document.getElementById('message-input').focus();
+        }
+
+        function cancelReply() {
+            replyToMessageId = null;
+            replyToMessageData = null;
+            document.getElementById('reply-preview').classList.add('hidden');
         }
 
         function showToast(text) {
@@ -1295,6 +1402,7 @@
             }
         }
 
+        // ===== ИСПРАВЛЕННАЯ ОТПРАВКА С УЧЕТОМ ОТВЕТА =====
         async function sendMessage() {
             const input = document.getElementById('message-input');
             const text = input.value.trim();
@@ -1306,6 +1414,12 @@
             if (text) {
                 formData.append('text', text);
                 input.value = '';
+            }
+
+            // Добавляем ID сообщения, на которое отвечаем
+            if (replyToMessageId) {
+                formData.append('replyTo', replyToMessageId);
+                cancelReply();
             }
 
             selectedFiles.forEach((file) => {
