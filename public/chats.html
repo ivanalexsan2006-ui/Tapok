@@ -86,7 +86,41 @@
             gap: 5px;
             text-decoration: none;
         }
-        
+        .header-buttons {
+    display: flex;
+    gap: 10px;
+}
+
+.profile-btn, .settings-btn {
+    background: transparent;
+    border: 1px solid white;
+    color: white;
+    padding: 8px 15px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    text-decoration: none;
+    transition: background 0.2s;
+}
+
+.profile-btn:hover, .settings-btn:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+/* Для светлой темы */
+body.light .profile-btn,
+body.light .settings-btn {
+    border-color: #2a6ee0;
+    color: #2a6ee0;
+}
+
+body.light .profile-btn:hover,
+body.light .settings-btn:hover {
+    background: rgba(42,110,224,0.1);
+}
         .search {
             padding: 10px;
         }
@@ -774,4 +808,5 @@
     </script>
 </body>
 </html>
+
 
