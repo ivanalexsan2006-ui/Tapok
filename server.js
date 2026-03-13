@@ -9,7 +9,6 @@ const fs = require('fs');
 const cors = require('cors');
 const webpush = require('web-push');
 
-// Добавляем поддержку кодировки
 process.env.LANG = 'en_US.UTF-8';
 process.env.LC_ALL = 'en_US.UTF-8';
 
@@ -45,7 +44,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Middleware для Service Worker (важно для iOS)
 app.use((req, res, next) => {
     res.setHeader('Service-Worker-Allowed', '/');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -60,17 +58,27 @@ app.use((req, res, next) => {
 // ========== СОЗДАНИЕ ТАБЛИЦ ==========
 async function initDb() {
     try {
-        // Пользователи
+        // Пользователи (добавлены новые поля)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 phone VARCHAR(50) UNIQUE NOT NULL,
                 name VARCHAR(100) NOT NULL,
+                username VARCHAR(50) UNIQUE,
                 avatar TEXT,
                 status VARCHAR(20) DEFAULT 'offline',
                 push_subscription JSONB,
                 last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                
+                -- Новые настройки приватности
+                hide_phone BOOLEAN DEFAULT false,
+                hide_status BOOLEAN DEFAULT false,
+                hide_avatar BOOLEAN DEFAULT false,
+                who_can_write VARCHAR(20) DEFAULT 'all', -- 'all' или 'contacts'
+                
+                -- Тема
+                theme VARCHAR(10) DEFAULT 'dark'
             )
         `);
 
@@ -119,6 +127,17 @@ async function initDb() {
                 message_id INTEGER REFERENCES messages(id) ON DELETE CASCADE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (user_id, chat_id, message_id)
+            )
+        `);
+
+        // Контакты пользователя
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS user_contacts (
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                contact_phone VARCHAR(50) NOT NULL,
+                contact_name VARCHAR(100),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (user_id, contact_phone)
             )
         `);
 
@@ -196,6 +215,18 @@ app.get('/user-profile.html', (req, res) => {
     res.sendFile(__dirname + '/public/user-profile.html');
 });
 
+app.get('/group-profile.html', (req, res) => {
+    res.sendFile(__dirname + '/public/group-profile.html');
+});
+
+app.get('/contacts.html', (req, res) => {
+    res.sendFile(__dirname + '/public/contacts.html');
+});
+
+app.get('/settings.html', (req, res) => {
+    res.sendFile(__dirname + '/public/settings.html');
+});
+
 // ========== MIDDLEWARE ==========
 async function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
@@ -216,7 +247,7 @@ async function authenticateToken(req, res, next) {
 
 // РЕГИСТРАЦИЯ
 app.post('/api/register', upload.single('avatar'), async (req, res) => {
-    const { phone, name, password } = req.body;
+    const { phone, name, username, password } = req.body;
     
     if (password !== APP_PASSWORD) {
         return res.status(403).json({ error: 'Неверный пароль доступа' });
@@ -227,6 +258,17 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
     }
 
     try {
+        // Проверка на уникальность username
+        if (username) {
+            const usernameExists = await pool.query(
+                'SELECT id FROM users WHERE username = $1',
+                [username]
+            );
+            if (usernameExists.rows.length > 0) {
+                return res.status(400).json({ error: 'Этот @username уже занят' });
+            }
+        }
+
         const existing = await pool.query(
             'SELECT id FROM users WHERE phone = $1',
             [phone]
@@ -242,8 +284,8 @@ app.post('/api/register', upload.single('avatar'), async (req, res) => {
         }
 
         const result = await pool.query(
-            'INSERT INTO users (phone, name, avatar, status) VALUES ($1, $2, $3, $4) RETURNING id, phone, name, avatar',
-            [phone, name, avatar, 'online']
+            'INSERT INTO users (phone, name, username, avatar, status) VALUES ($1, $2, $3, $4, $5) RETURNING id, phone, name, username, avatar',
+            [phone, name, username || null, avatar, 'online']
         );
 
         const user = result.rows[0];
@@ -275,7 +317,7 @@ app.post('/api/login', async (req, res) => {
 
     try {
         const result = await pool.query(
-            'SELECT id, phone, name, avatar FROM users WHERE phone = $1',
+            'SELECT id, phone, name, username, avatar, theme, hide_phone, hide_status, hide_avatar, who_can_write FROM users WHERE phone = $1',
             [phone]
         );
 
@@ -308,34 +350,187 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// ========== ЭНДПОИНТЫ ДЛЯ ПРОФИЛЯ ==========
+// ========== КОНТАКТЫ ==========
+// Синхронизация контактов
+app.post('/api/contacts/sync', authenticateToken, async (req, res) => {
+    const { contacts } = req.body; // Массив объектов {phone, name}
+    
+    if (!contacts || !Array.isArray(contacts)) {
+        return res.status(400).json({ error: 'Неверный формат контактов' });
+    }
 
-// Получить данные текущего пользователя
-app.get('/api/users/me', authenticateToken, async (req, res) => {
+    const client = await pool.connect();
+    
+    try {
+        await client.query('BEGIN');
+        
+        // Очищаем старые контакты
+        await client.query('DELETE FROM user_contacts WHERE user_id = $1', [req.user.userId]);
+        
+        // Добавляем новые
+        for (const contact of contacts) {
+            if (contact.phone) {
+                await client.query(
+                    'INSERT INTO user_contacts (user_id, contact_phone, contact_name) VALUES ($1, $2, $3)',
+                    [req.user.userId, contact.phone, contact.name || null]
+                );
+            }
+        }
+        
+        await client.query('COMMIT');
+        
+        // Возвращаем список контактов, которые есть в Tapok
+        const tapokContacts = await pool.query(`
+            SELECT u.id, u.phone, u.name, u.username, u.avatar, u.status,
+                   uc.contact_name
+            FROM user_contacts uc
+            JOIN users u ON u.phone = uc.contact_phone
+            WHERE uc.user_id = $1
+        `, [req.user.userId]);
+        
+        res.json(tapokContacts.rows);
+        
+    } catch (err) {
+        await client.query('ROLLBACK');
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка синхронизации контактов' });
+    } finally {
+        client.release();
+    }
+});
+
+// Получить контакты из Tapok
+app.get('/api/contacts', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT u.id, u.phone, u.name, u.username, u.avatar, u.status,
+                   uc.contact_name
+            FROM user_contacts uc
+            JOIN users u ON u.phone = uc.contact_phone
+            WHERE uc.user_id = $1
+            ORDER BY uc.contact_name, u.name
+        `, [req.user.userId]);
+        
+        res.json(result.rows);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка получения контактов' });
+    }
+});
+
+// ========== НАСТРОЙКИ ==========
+// Получить настройки пользователя
+app.get('/api/settings', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(
-            'SELECT id, phone, name, avatar, status, last_seen FROM users WHERE id = $1',
+            'SELECT theme, hide_phone, hide_status, hide_avatar, who_can_write FROM users WHERE id = $1',
             [req.user.userId]
         );
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Пользователь не найден' });
-        }
         
         res.json(result.rows[0]);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Ошибка сервера' });
+        res.status(500).json({ error: 'Ошибка получения настроек' });
     }
 });
 
-// Получить данные другого пользователя
+// Обновить настройки
+app.put('/api/settings', authenticateToken, async (req, res) => {
+    const { theme, hide_phone, hide_status, hide_avatar, who_can_write } = req.body;
+    
+    try {
+        await pool.query(
+            `UPDATE users SET 
+                theme = COALESCE($1, theme),
+                hide_phone = COALESCE($2, hide_phone),
+                hide_status = COALESCE($3, hide_status),
+                hide_avatar = COALESCE($4, hide_avatar),
+                who_can_write = COALESCE($5, who_can_write)
+            WHERE id = $6`,
+            [theme, hide_phone, hide_status, hide_avatar, who_can_write, req.user.userId]
+        );
+        
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка обновления настроек' });
+    }
+});
+
+// Обновить username
+app.put('/api/users/username', authenticateToken, async (req, res) => {
+    const { username } = req.body;
+    
+    if (!username || !username.match(/^[a-zA-Z0-9_]{3,20}$/)) {
+        return res.status(400).json({ error: 'Некорректный username (только буквы, цифры и _, от 3 до 20 символов)' });
+    }
+    
+    try {
+        // Проверяем, не занят ли
+        const existing = await pool.query(
+            'SELECT id FROM users WHERE username = $1 AND id != $2',
+            [username, req.user.userId]
+        );
+        
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ error: 'Этот username уже занят' });
+        }
+        
+        await pool.query(
+            'UPDATE users SET username = $1 WHERE id = $2',
+            [username, req.user.userId]
+        );
+        
+        res.json({ success: true, username });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка обновления username' });
+    }
+});
+
+// ========== ПОИСК ПОЛЬЗОВАТЕЛЕЙ (НОВЫЙ) ==========
+app.get('/api/users/search', authenticateToken, async (req, res) => {
+    const { query } = req.query;
+    
+    if (!query || query.length < 2) {
+        return res.json([]);
+    }
+    
+    try {
+        // Ищем по имени, телефону или username
+        const result = await pool.query(`
+            SELECT id, phone, name, username, avatar, status,
+                   hide_phone, hide_status, hide_avatar
+            FROM users 
+            WHERE (name ILIKE $1 OR phone ILIKE $1 OR username ILIKE $1)
+            AND id != $2
+            LIMIT 20
+        `, [`%${query}%`, req.user.userId]);
+        
+        // Применяем настройки приватности
+        const users = result.rows.map(user => ({
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            avatar: user.hide_avatar ? null : user.avatar,
+            status: user.hide_status ? 'hidden' : user.status,
+            phone: user.hide_phone ? null : user.phone
+        }));
+        
+        res.json(users);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка поиска' });
+    }
+});
+
+// ПОЛУЧИТЬ ДАННЫЕ ПОЛЬЗОВАТЕЛЯ (с учетом приватности)
 app.get('/api/users/:userId', authenticateToken, async (req, res) => {
     const { userId } = req.params;
     
     try {
         const result = await pool.query(
-            'SELECT id, phone, name, avatar, status, last_seen FROM users WHERE id = $1',
+            'SELECT id, phone, name, username, avatar, status, hide_phone, hide_status, hide_avatar, who_can_write FROM users WHERE id = $1',
             [userId]
         );
         
@@ -343,122 +538,38 @@ app.get('/api/users/:userId', authenticateToken, async (req, res) => {
             return res.status(404).json({ error: 'Пользователь не найден' });
         }
         
-        res.json(result.rows[0]);
+        const user = result.rows[0];
+        
+        // Проверяем, есть ли уже чат
+        const chatExists = await pool.query(`
+            SELECT c.id FROM chats c
+            JOIN chat_participants cp1 ON c.id = cp1.chat_id
+            JOIN chat_participants cp2 ON c.id = cp2.chat_id
+            WHERE c.is_group = false
+            AND cp1.user_id = $1
+            AND cp2.user_id = $2
+        `, [req.user.userId, userId]);
+        
+        // Применяем приватность
+        const responseUser = {
+            id: user.id,
+            name: user.name,
+            username: user.username,
+            avatar: user.hide_avatar ? null : user.avatar,
+            status: user.hide_status ? 'hidden' : user.status,
+            phone: user.hide_phone ? null : user.phone,
+            who_can_write: user.who_can_write,
+            existing_chat_id: chatExists.rows[0]?.id || null
+        };
+        
+        res.json(responseUser);
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
 
-// Обновить имя пользователя
-app.put('/api/users/name', authenticateToken, async (req, res) => {
-    const { name } = req.body;
-    
-    if (!name || name.trim().length === 0) {
-        return res.status(400).json({ error: 'Имя не может быть пустым' });
-    }
-    
-    try {
-        await pool.query(
-            'UPDATE users SET name = $1 WHERE id = $2',
-            [name.trim(), req.user.userId]
-        );
-        
-        res.json({ success: true, name: name.trim() });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка сервера' });
-    }
-});
-
-// Обновить аватар
-app.post('/api/users/avatar', authenticateToken, upload.single('avatar'), async (req, res) => {
-    if (!req.file) {
-        return res.status(400).json({ error: 'Файл не загружен' });
-    }
-    
-    try {
-        const avatarUrl = `/avatars/${req.file.filename}`;
-        
-        await pool.query(
-            'UPDATE users SET avatar = $1 WHERE id = $2',
-            [avatarUrl, req.user.userId]
-        );
-        
-        res.json({ success: true, avatar: avatarUrl });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка сервера' });
-    }
-});
-
-// ПОИСК ПОЛЬЗОВАТЕЛЕЙ
-app.get('/api/users/search', authenticateToken, async (req, res) => {
-    const { query } = req.query;
-    
-    try {
-        let result;
-        if (query && query.length > 0) {
-            result = await pool.query(
-                'SELECT id, phone, name, avatar, status FROM users WHERE (phone ILIKE $1 OR name ILIKE $1) AND id != $2 LIMIT 20',
-                [`%${query}%`, req.user.userId]
-            );
-        } else {
-            result = await pool.query(
-                'SELECT id, phone, name, avatar, status FROM users WHERE id != $1 ORDER BY name LIMIT 50',
-                [req.user.userId]
-            );
-        }
-        
-        res.json(result.rows);
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка поиска' });
-    }
-});
-
-// СОЗДАТЬ ЧАТ
-app.post('/api/chats', authenticateToken, async (req, res) => {
-    const { name, isGroup, participants } = req.body;
-    
-    if (!participants || !participants.length) {
-        return res.status(400).json({ error: 'Нужны участники' });
-    }
-
-    const allParticipants = [...new Set([req.user.userId, ...participants])];
-    const client = await pool.connect();
-
-    try {
-        await client.query('BEGIN');
-
-        const chatResult = await client.query(
-            'INSERT INTO chats (name, is_group, created_by) VALUES ($1, $2, $3) RETURNING id',
-            [name || null, isGroup || false, req.user.userId]
-        );
-
-        const chatId = chatResult.rows[0].id;
-
-        for (const userId of allParticipants) {
-            await client.query(
-                'INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES ($1, $2, $3)',
-                [chatId, userId, userId === req.user.userId]
-            );
-        }
-
-        await client.query('COMMIT');
-
-        res.json({ id: chatId, name, isGroup: !!isGroup });
-
-    } catch (err) {
-        await client.query('ROLLBACK');
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка создания чата' });
-    } finally {
-        client.release();
-    }
-});
-
-// ПОЛУЧИТЬ ЧАТЫ
+// ПОЛУЧИТЬ ЧАТЫ (ТОЛЬКО СУЩЕСТВУЮЩИЕ)
 app.get('/api/chats', authenticateToken, async (req, res) => {
     try {
         const result = await pool.query(`
@@ -494,14 +605,21 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
 
         for (let chat of chats) {
             const participants = await pool.query(`
-                SELECT u.id, u.phone, u.name, u.avatar, u.status,
+                SELECT u.id, u.phone, u.name, u.username, u.avatar, u.status,
+                       u.hide_phone, u.hide_status, u.hide_avatar,
                        cp.is_admin
                 FROM users u
                 JOIN chat_participants cp ON u.id = cp.user_id
                 WHERE cp.chat_id = $1
             `, [chat.id]);
 
-            chat.participants = participants.rows;
+            // Применяем приватность к участникам
+            chat.participants = participants.rows.map(p => ({
+                ...p,
+                phone: p.hide_phone ? null : p.phone,
+                status: p.hide_status ? 'hidden' : p.status,
+                avatar: p.hide_avatar ? null : p.avatar
+            }));
         }
 
         res.json(chats);
@@ -512,63 +630,124 @@ app.get('/api/chats', authenticateToken, async (req, res) => {
     }
 });
 
-// ПОЛУЧИТЬ ЧАТ
-app.get('/api/chats/:chatId', authenticateToken, async (req, res) => {
-    const { chatId } = req.params;
+// СОЗДАТЬ ЧАТ (с проверкой на дубликат)
+app.post('/api/chats', authenticateToken, async (req, res) => {
+    const { name, isGroup, participants } = req.body;
+    
+    if (!participants || !participants.length) {
+        return res.status(400).json({ error: 'Нужны участники' });
+    }
+
+    // Для личного чата проверяем, существует ли уже
+    if (!isGroup && participants.length === 1) {
+        const existingChat = await pool.query(`
+            SELECT c.id FROM chats c
+            JOIN chat_participants cp1 ON c.id = cp1.chat_id
+            JOIN chat_participants cp2 ON c.id = cp2.chat_id
+            WHERE c.is_group = false
+            AND cp1.user_id = $1
+            AND cp2.user_id = $2
+        `, [req.user.userId, participants[0]]);
+        
+        if (existingChat.rows.length > 0) {
+            return res.json({ id: existingChat.rows[0].id, existing: true });
+        }
+    }
+
+    const allParticipants = [...new Set([req.user.userId, ...participants])];
+    const client = await pool.connect();
 
     try {
-        const chat = await pool.query(
-            'SELECT * FROM chats WHERE id = $1',
-            [chatId]
+        await client.query('BEGIN');
+
+        const chatResult = await client.query(
+            'INSERT INTO chats (name, is_group, created_by) VALUES ($1, $2, $3) RETURNING id',
+            [name || null, isGroup || false, req.user.userId]
         );
 
-        if (chat.rows.length === 0) {
-            return res.status(404).json({ error: 'Чат не найден' });
+        const chatId = chatResult.rows[0].id;
+
+        for (const userId of allParticipants) {
+            await client.query(
+                'INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES ($1, $2, $3)',
+                [chatId, userId, userId === req.user.userId]
+            );
         }
 
-        const participants = await pool.query(`
-            SELECT u.id, u.phone, u.name, u.avatar, u.status,
-                   cp.is_admin
-            FROM users u
-            JOIN chat_participants cp ON u.id = cp.user_id
-            WHERE cp.chat_id = $1
-        `, [chatId]);
+        await client.query('COMMIT');
 
-        const result = {
-            ...chat.rows[0],
-            participants: participants.rows
-        };
-
-        res.json(result);
+        res.json({ id: chatId, name, isGroup: !!isGroup, existing: false });
 
     } catch (err) {
+        await client.query('ROLLBACK');
         console.error(err);
-        res.status(500).json({ error: 'Ошибка получения чата' });
+        res.status(500).json({ error: 'Ошибка создания чата' });
+    } finally {
+        client.release();
     }
 });
 
-// УДАЛИТЬ ЧАТ
-app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
-    const { chatId } = req.params;
-
+// ПОИСК ПО ЧАТАМ (для поиска сверху)
+app.get('/api/chats/search', authenticateToken, async (req, res) => {
+    const { query } = req.query;
+    
+    if (!query || query.length < 2) {
+        return res.json([]);
+    }
+    
     try {
-        const participant = await pool.query(
-            'SELECT * FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
-            [chatId, req.user.userId]
-        );
-
-        if (participant.rows.length === 0) {
-            return res.status(403).json({ error: 'Нет доступа к чату' });
+        // Ищем чаты, где есть пользователи с подходящим именем
+        const result = await pool.query(`
+            SELECT DISTINCT c.id, c.is_group, c.name as group_name,
+                   u.id as user_id, u.name as user_name, u.username, u.avatar
+            FROM chats c
+            JOIN chat_participants cp ON c.id = cp.chat_id
+            JOIN users u ON cp.user_id = u.id
+            WHERE c.id IN (
+                SELECT chat_id FROM chat_participants WHERE user_id = $1
+            )
+            AND u.id != $1
+            AND (u.name ILIKE $2 OR u.username ILIKE $2)
+            ORDER BY u.name
+            LIMIT 20
+        `, [req.user.userId, `%${query}%`]);
+        
+        // Форматируем результат
+        const chats = [];
+        const seen = new Set();
+        
+        for (const row of result.rows) {
+            if (!seen.has(row.id)) {
+                seen.add(row.id);
+                if (row.is_group) {
+                    chats.push({
+                        id: row.id,
+                        type: 'group',
+                        name: row.group_name,
+                        avatar: '👥'
+                    });
+                } else {
+                    chats.push({
+                        id: row.id,
+                        type: 'user',
+                        name: row.user_name,
+                        username: row.username,
+                        avatar: row.avatar,
+                        userId: row.user_id
+                    });
+                }
+            }
         }
-
-        await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
-
-        res.json({ success: true });
+        
+        res.json(chats);
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Ошибка удаления чата' });
+        res.status(500).json({ error: 'Ошибка поиска чатов' });
     }
 });
+
+// ========== ОСТАЛЬНЫЕ ЭНДПОИНТЫ (без изменений) ==========
+// ... (сообщения, удаление, вебсокеты и т.д. из предыдущей версии)
 
 // ПОЛУЧИТЬ СООБЩЕНИЯ
 app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
