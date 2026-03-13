@@ -56,7 +56,6 @@ app.use((req, res, next) => {
 // ========== СОЗДАНИЕ ТАБЛИЦ ==========
 async function initDb() {
     try {
-        // Пользователи
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -70,7 +69,6 @@ async function initDb() {
             )
         `);
 
-        // Чаты
         await pool.query(`
             CREATE TABLE IF NOT EXISTS chats (
                 id SERIAL PRIMARY KEY,
@@ -81,7 +79,6 @@ async function initDb() {
             )
         `);
 
-        // Участники чатов
         await pool.query(`
             CREATE TABLE IF NOT EXISTS chat_participants (
                 chat_id INTEGER REFERENCES chats(id) ON DELETE CASCADE,
@@ -92,7 +89,6 @@ async function initDb() {
             )
         `);
 
-        // Сообщения
         await pool.query(`
             CREATE TABLE IF NOT EXISTS messages (
                 id SERIAL PRIMARY KEY,
@@ -107,7 +103,6 @@ async function initDb() {
             )
         `);
 
-        // Непрочитанные
         await pool.query(`
             CREATE TABLE IF NOT EXISTS unread_messages (
                 user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -137,14 +132,34 @@ const storage = multer.diskStorage({
     },
     filename: (req, file, cb) => {
         const unique = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        const ext = path.extname(file.originalname);
+        const ext = path.extname(file.originalname) || 
+                   (file.mimetype === 'audio/mp4' ? '.m4a' : 
+                    file.mimetype === 'audio/webm' ? '.webm' : 
+                    path.extname(file.originalname));
         cb(null, file.fieldname + '-' + unique + ext);
     }
 });
 
 const upload = multer({ 
     storage: storage,
-    limits: { fileSize: 50 * 1024 * 1024 } // 50MB
+    limits: { 
+        fileSize: 100 * 1024 * 1024,
+        files: 10
+    },
+    fileFilter: (req, file, cb) => {
+        if (file.fieldname === 'voice') {
+            if (file.mimetype === 'audio/mp4' || 
+                file.mimetype === 'audio/webm' || 
+                file.mimetype === 'audio/ogg' ||
+                file.mimetype === 'audio/mpeg') {
+                cb(null, true);
+            } else {
+                cb(new Error('Неподдерживаемый формат аудио'));
+            }
+        } else {
+            cb(null, true);
+        }
+    }
 });
 
 // Статика
@@ -322,7 +337,6 @@ app.post('/api/chats', authenticateToken, async (req, res) => {
 
         const chatId = chatResult.rows[0].id;
 
-        // Добавляем всех участников
         for (const userId of allParticipants) {
             await client.query(
                 'INSERT INTO chat_participants (chat_id, user_id, is_admin) VALUES ($1, $2, $3)',
@@ -519,7 +533,7 @@ app.delete('/api/messages/:messageId', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== ИСПРАВЛЕННАЯ ОТПРАВКА СООБЩЕНИЙ ==========
+// ОТПРАВКА СООБЩЕНИЙ
 app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     { name: 'photos', maxCount: 10 },
     { name: 'videos', maxCount: 5 },
@@ -576,13 +590,11 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             messages.push(voiceResult.rows[0]);
         }
 
-        // Получаем всех участников чата
         const participants = await client.query(
             'SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2',
             [chatId, req.user.userId]
         );
 
-        // Добавляем непрочитанные
         for (const msg of messages) {
             for (const p of participants.rows) {
                 await client.query(
@@ -594,7 +606,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
 
         await client.query('COMMIT');
 
-        // Получаем полные сообщения
         const fullMessages = [];
         for (const msg of messages) {
             const fullMsg = await client.query(`
@@ -606,7 +617,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             fullMessages.push(fullMsg.rows[0]);
         }
 
-        // Рассылаем через WebSocket
         const wsMessage = JSON.stringify({
             type: 'new_message',
             chatId: parseInt(chatId),
@@ -623,7 +633,7 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             }
         });
 
-        // ========== ИСПРАВЛЕННЫЕ PUSH-УВЕДОМЛЕНИЯ ==========
+        // PUSH-УВЕДОМЛЕНИЯ
         for (const p of participants.rows) {
             const userPush = await pool.query(
                 'SELECT push_subscription, name FROM users WHERE id = $1',
@@ -632,7 +642,6 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             
             if (userPush.rows[0]?.push_subscription) {
                 try {
-                    // Формируем текст уведомления
                     let messageBody = '';
                     if (fullMessages[0]?.text) {
                         messageBody = `${fullMessages[0].user_name}: ${fullMessages[0].text.substring(0, 50)}`;
