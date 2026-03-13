@@ -95,7 +95,7 @@ async function initDb() {
             )
         `);
 
-        // Сообщения (базовая таблица)
+        // Сообщения
         await pool.query(`
             CREATE TABLE IF NOT EXISTS messages (
                 id SERIAL PRIMARY KEY,
@@ -106,6 +106,7 @@ async function initDb() {
                 media_type VARCHAR(20),
                 voice_url TEXT,
                 voice_duration INTEGER,
+                reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
@@ -182,9 +183,7 @@ async function initDb() {
 
         console.log('✅ Базовая структура таблиц готова');
 
-        // ===== ДОБАВЛЯЕМ НОВЫЕ ПОЛЯ ПОСЛЕ СОЗДАНИЯ ТАБЛИЦ =====
-        
-        // Добавляем поля приватности в users
+        // Добавляем поля приватности
         try {
             await pool.query(`
                 ALTER TABLE users 
@@ -194,23 +193,12 @@ async function initDb() {
                 ADD COLUMN IF NOT EXISTS who_can_write VARCHAR(20) DEFAULT 'all',
                 ADD COLUMN IF NOT EXISTS theme VARCHAR(10) DEFAULT 'dark'
             `);
-            console.log('✅ Поля приватности добавлены в users');
+            console.log('✅ Поля приватности добавлены');
         } catch (err) {
-            console.log('⚠️ Ошибка при добавлении полей в users:', err.message);
+            console.log('⚠️ Поля приватности уже есть');
         }
 
-        // Добавляем поле reply_to в messages
-        try {
-            await pool.query(`
-                ALTER TABLE messages 
-                ADD COLUMN IF NOT EXISTS reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL
-            `);
-            console.log('✅ Поле reply_to добавлено в messages');
-        } catch (err) {
-            console.log('⚠️ Ошибка при добавлении reply_to в messages:', err.message);
-        }
-
-        console.log('✅ Все таблицы обновлены полностью');
+        console.log('✅ Все таблицы обновлены');
 
     } catch (err) {
         console.error('❌ Ошибка создания таблиц:', err);
@@ -412,6 +400,61 @@ app.post('/api/login', async (req, res) => {
         res.status(500).json({ error: 'Ошибка сервера' });
     }
 });
+
+// ========== PUSH УВЕДОМЛЕНИЯ ==========
+app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
+    const { subscription } = req.body;
+
+    try {
+        await pool.query(
+            'UPDATE users SET push_subscription = $1 WHERE id = $2',
+            [subscription, req.user.userId]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка подписки' });
+    }
+});
+
+app.get('/api/push/status', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT push_subscription FROM users WHERE id = $1',
+            [req.user.userId]
+        );
+        
+        res.json({ 
+            subscribed: !!result.rows[0]?.push_subscription
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Функция отправки push
+async function sendPush(userId, payload) {
+    try {
+        const result = await pool.query(
+            'SELECT push_subscription FROM users WHERE id = $1',
+            [userId]
+        );
+
+        const sub = result.rows[0]?.push_subscription;
+        if (!sub) return;
+
+        await webpush.sendNotification(sub, JSON.stringify(payload));
+        console.log(`✅ Push отправлен пользователю ${userId}`);
+    } catch (err) {
+        console.error(`❌ Ошибка push для ${userId}:`, err.message);
+        if (err.statusCode === 410) {
+            await pool.query(
+                'UPDATE users SET push_subscription = NULL WHERE id = $1',
+                [userId]
+            );
+        }
+    }
+}
 
 // ========== КОНТАКТЫ ==========
 app.post('/api/contacts/sync', authenticateToken, async (req, res) => {
@@ -1246,73 +1289,22 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             }
         });
 
-        // PUSH-УВЕДОМЛЕНИЯ
+        // ===== ОТПРАВКА PUSH УВЕДОМЛЕНИЙ =====
         for (const p of participants.rows) {
-            const userPush = await pool.query(
-                'SELECT push_subscription, name FROM users WHERE id = $1',
-                [p.user_id]
-            );
-            
-            if (userPush.rows[0]?.push_subscription) {
-                try {
-                    let messageBody = '';
-                    if (fullMessages[0]?.text) {
-                        messageBody = `${fullMessages[0].user_name}: ${fullMessages[0].text.substring(0, 50)}`;
-                    } else if (fullMessages[0]?.media_type === 'photo') {
-                        messageBody = `${fullMessages[0].user_name} отправил(а) 📷 фото`;
-                    } else if (fullMessages[0]?.media_type === 'video') {
-                        messageBody = `${fullMessages[0].user_name} отправил(а) 🎥 видео`;
-                    } else if (fullMessages[0]?.voice_url) {
-                        messageBody = `${fullMessages[0].user_name} отправил(а) 🎤 голосовое`;
-                    } else {
-                        messageBody = `${fullMessages[0].user_name}: новое сообщение`;
-                    }
-
-                    const notificationPayload = {
-                        title: '💬 Tapok',
-                        body: messageBody,
-                        icon: '/icons/icon-192.png',
-                        badge: '/icons/icon-72.png',
-                        vibrate: [200, 100, 200],
-                        data: {
-                            url: `/chat.html?id=${chatId}`,
-                            chatId: chatId,
-                            messageId: fullMessages[0]?.id,
-                            timestamp: Date.now()
-                        },
-                        actions: [
-                            {
-                                action: 'open',
-                                title: 'Открыть чат'
-                            }
-                        ],
-                        dir: 'auto',
-                        lang: 'ru',
-                        renotify: true,
-                        requireInteraction: true,
-                        silent: false,
-                        tag: `chat-${chatId}`,
-                        timestamp: Date.now()
-                    };
-                    
-                    await webpush.sendNotification(
-                        userPush.rows[0].push_subscription,
-                        JSON.stringify(notificationPayload)
-                    );
-                    
-                    console.log(`✅ Push отправлен пользователю ${p.user_id}`);
-                    
-                } catch (e) {
-                    console.error(`❌ Ошибка отправки push пользователю ${p.user_id}:`, e.message);
-                    
-                    if (e.statusCode === 410 || e.message.includes('expired')) {
-                        await pool.query(
-                            'UPDATE users SET push_subscription = NULL WHERE id = $1',
-                            [p.user_id]
-                        );
-                    }
+            const payload = {
+                title: '💬 Tapok',
+                body: fullMessages[0]?.text 
+                    ? `${fullMessages[0].user_name}: ${fullMessages[0].text.substring(0, 50)}`
+                    : `${fullMessages[0].user_name} отправил(а) медиа`,
+                icon: '/icons/icon-192.png',
+                badge: '/icons/icon-192.png',
+                data: { 
+                    url: `/chat.html?id=${chatId}`,
+                    chatId: chatId
                 }
-            }
+            };
+            
+            await sendPush(p.user_id, payload);
         }
 
         res.json(fullMessages);
@@ -1440,37 +1432,6 @@ app.get('/api/chats/:chatId/pins', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== ПОДПИСКА НА PUSH ==========
-app.post('/api/push/subscribe', authenticateToken, async (req, res) => {
-    const { subscription } = req.body;
-
-    try {
-        await pool.query(
-            'UPDATE users SET push_subscription = $1 WHERE id = $2',
-            [subscription, req.user.userId]
-        );
-        res.json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка подписки' });
-    }
-});
-
-app.get('/api/push/status', authenticateToken, async (req, res) => {
-    try {
-        const result = await pool.query(
-            'SELECT push_subscription FROM users WHERE id = $1',
-            [req.user.userId]
-        );
-        
-        res.json({ 
-            subscribed: !!result.rows[0]?.push_subscription
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
 // ========== WEB SOCKET ==========
 wss.on('connection', (ws) => {
     ws.on('message', async (data) => {
@@ -1533,12 +1494,11 @@ wss.on('connection', (ws) => {
     });
 });
 
-// ========== ЗАПУСК ИНИЦИАЛИЗАЦИИ БД ==========
+// ========== ЗАПУСК ==========
 initDb().catch(err => {
     console.error('❌ Ошибка при инициализации БД:', err);
 });
 
-// ========== ЗАПУСК СЕРВЕРА ==========
 server.listen(PORT, () => {
     console.log(`\n🚀 TAPOK MESSENGER 7.0 ЗАПУЩЕН!`);
     console.log(`📱 Пароль для всех: ${APP_PASSWORD}`);
