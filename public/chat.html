@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Tapok · чат</title>
-        <!-- Иконки для всех устройств -->
+    <!-- Иконки для всех устройств -->
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192.png">
@@ -1605,17 +1605,9 @@
                 }
             }
         });
-         </script>
-
-    <!-- Регистрация Service Worker -->
-    <script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/service-worker.js')
-                .then(reg => console.log('✅ Service Worker зарегистрирован:', reg.scope))
-                .catch(err => console.error('❌ Ошибка регистрации SW:', err));
-        });
-    }
     </script>
+
+    <!-- ЕДИНАЯ РЕГИСТРАЦИЯ SERVICE WORKER -->
+    <script src="/sw-register.js"></script>
 </body>
 </html>
