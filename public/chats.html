@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Tapok · чаты</title>
-        <!-- Иконки для всех устройств -->
+    <!-- Иконки для всех устройств -->
     <link rel="apple-touch-icon" href="/icons/icon-192.png">
     <link rel="apple-touch-icon" sizes="152x152" href="/icons/icon-152.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192.png">
@@ -512,11 +512,12 @@
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
                 
+                if (res.status === 401) {
+                    window.location.href = '/';
+                    return;
+                }
+                
                 if (!res.ok) {
-                    if (res.status === 401) {
-                        window.location.href = '/';
-                        return;
-                    }
                     throw new Error(`Ошибка ${res.status}`);
                 }
                 
@@ -532,7 +533,7 @@
                 console.error('Ошибка загрузки чатов:', e);
                 list.innerHTML = `
                     <div class="loading" style="color: #f44336;">
-                        Ошибка загрузки<br>
+                        Ошибка загрузки: ${e.message}<br>
                         <button onclick="loadChats()" style="margin-top:10px; padding:8px 20px; background:#2a6ee0; border:none; color:white; border-radius:5px;">🔄 Повторить</button>
                     </div>
                 `;
@@ -870,17 +871,9 @@
         });
 
         loadChats();
-        </script>
-
-    <!-- Регистрация Service Worker -->
-    <script>
-    if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-            navigator.serviceWorker.register('/service-worker.js')
-                .then(reg => console.log('✅ Service Worker зарегистрирован:', reg.scope))
-                .catch(err => console.error('❌ Ошибка регистрации SW:', err));
-        });
-    }
     </script>
+
+    <!-- ЕДИНАЯ РЕГИСТРАЦИЯ SERVICE WORKER -->
+    <script src="/sw-register.js"></script>
 </body>
 </html>
