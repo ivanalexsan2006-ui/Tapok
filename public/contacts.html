@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tapok · контакты</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #17212b;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            color: white;
+            min-height: 100vh;
+        }
+        .header {
+            background: #2a6ee0;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        .back-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .header h1 {
+            font-size: 20px;
+            flex: 1;
+        }
+        .sync-btn {
+            background: transparent;
+            border: 1px solid white;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .content {
+            padding: 20px;
+        }
+        .permission-request {
+            background: #242f3d;
+            border-radius: 12px;
+            padding: 30px 20px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .permission-request p {
+            margin-bottom: 20px;
+            color: #8a9aa8;
+        }
+        .grant-btn {
+            background: #2a6ee0;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .contacts-list {
+            background: #242f3d;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        .contact-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 15px;
+            border-bottom: 1px solid #1e2b38;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .contact-item:last-child {
+            border-bottom: none;
+        }
+        .contact-item:hover {
+            background: #17212b;
+        }
+        .contact-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #2a6ee0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+        .contact-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .contact-info {
+            flex: 1;
+        }
+        .contact-name {
+            font-weight: bold;
+            margin-bottom: 4px;
+        }
+        .contact-phone {
+            font-size: 12px;
+            color: #8a9aa8;
+        }
+        .contact-status {
+            font-size: 11px;
+            color: #4caf50;
+            margin-left: 10px;
+        }
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: #8a9aa8;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 50px;
+            color: #8a9aa8;
+        }
+        .empty-state .icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-btn" onclick="window.location.href='/chats.html'">←</button>
+        <h1>Контакты</h1>
+        <button class="sync-btn" onclick="syncContacts()">🔄 Синхр.</button>
+    </div>
+
+    <div class="content" id="content">
+        <div class="loading">Загрузка...</div>
+    </div>
+
+    <script>
+        if (!localStorage.getItem('token')) {
+            window.location.href = '/';
+        }
+
+        async function loadContacts() {
+            const content = document.getElementById('content');
+            
+            try {
+                const res = await fetch('/api/contacts', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                
+                const contacts = await res.json();
+                
+                if (contacts.length === 0) {
+                    // Нет контактов - показываем запрос разрешения
+                    showPermissionRequest();
+                } else {
+                    displayContacts(contacts);
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки контактов:', e);
+                content.innerHTML = '<div class="empty-state">Ошибка загрузки</div>';
+            }
+        }
+
+        function showPermissionRequest() {
+            const content = document.getElementById('content');
+            content.innerHTML = `
+                <div class="permission-request">
+                    <div class="empty-state">
+                        <div class="icon">📱</div>
+                        <p>Разрешите доступ к контактам,<br>чтобы увидеть, кто из ваших друзей уже в Tapok</p>
+                        <button class="grant-btn" onclick="requestContacts()">Разрешить доступ</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function requestContacts() {
+            if (!navigator.contacts || !navigator.contacts.select) {
+                alert('Ваш браузер не поддерживает доступ к контактам. Попробуйте Chrome на Android.');
+                return;
+            }
+
+            try {
+                const contacts = await navigator.contacts.select(['name', 'tel'], { multiple: true });
+                
+                if (contacts && contacts.length > 0) {
+                    await syncContactsToServer(contacts);
+                }
+            } catch (e) {
+                console.error('Ошибка доступа к контактам:', e);
+                alert('Не удалось получить доступ к контактам');
+            }
+        }
+
+        async function syncContactsToServer(deviceContacts) {
+            const content = document.getElementById('content');
+            content.innerHTML = '<div class="loading">Синхронизация...</div>';
+            
+            // Форматируем контакты
+            const contacts = deviceContacts.map(c => ({
+                phone: c.tel?.[0]?.replace(/[^0-9+]/g, '') || '',
+                name: c.name?.[0] || ''
+            })).filter(c => c.phone);
+
+            try {
+                const res = await fetch('/api/contacts/sync', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ contacts })
+                });
+
+                if (res.ok) {
+                    const tapokContacts = await res.json();
+                    displayContacts(tapokContacts);
+                } else {
+                    throw new Error('Ошибка синхронизации');
+                }
+            } catch (e) {
+                console.error('Ошибка:', e);
+                content.innerHTML = '<div class="empty-state">Ошибка синхронизации</div>';
+            }
+        }
+
+        function displayContacts(contacts) {
+            const content = document.getElementById('content');
+            
+            if (contacts.length === 0) {
+                content.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <p>Никто из ваших контактов пока не в Tapok</p>
+                    </div>
+                `;
+                return;
+            }
+
+            content.innerHTML = `
+                <div class="contacts-list">
+                    ${contacts.map(c => `
+                        <div class="contact-item" onclick="openUserProfile(${c.id})">
+                            <div class="contact-avatar">
+                                ${c.avatar ? `<img src="${c.avatar}">` : (c.name ? c.name[0].toUpperCase() : '?')}
+                            </div>
+                            <div class="contact-info">
+                                <div class="contact-name">${c.name || 'Без имени'}</div>
+                                <div class="contact-phone">${c.phone || ''}</div>
+                            </div>
+                            ${c.status === 'online' ? '<div class="contact-status">онлайн</div>' : ''}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function openUserProfile(userId) {
+            window.location.href = `/user-profile.html?id=${userId}`;
+        }
+
+        // Загружаем контакты при открытии страницы
+        loadContacts();
+    </script>
+</body>
+</html>
