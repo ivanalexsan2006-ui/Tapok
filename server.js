@@ -23,8 +23,8 @@ const PORT = process.env.PORT || 3000;
 
 // VAPID keys для push-уведомлений
 const vapidKeys = {
-    publicKey: 'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U',
-    privateKey: 'UUxI4O8-FbRouAevSmBQ6o18hgE4nSG3qwvJTfKc-ls'
+    publicKey: 'BHfIsiJobjz-98Irf6kTHfgRra9xRX_Y5FKMaP7LDCHtDlogtH2RiwVoqE9AvQ8qFP-IPcZ93NiKMGtGZGoyYDU',
+    privateKey: 'iNOMhASK8pXyApWRKNN1F6AjoPDC_YwOClTMykOstK0'
 };
 
 webpush.setVapidDetails(
