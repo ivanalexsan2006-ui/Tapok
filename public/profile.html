@@ -11,8 +11,6 @@
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             color: white;
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
         }
         .header {
             background: #2a6ee0;
@@ -38,6 +36,16 @@
         .header h1 {
             font-size: 20px;
             flex: 1;
+        }
+        .settings-btn {
+            background: transparent;
+            border: 1px solid white;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            text-decoration: none;
         }
         .profile-content {
             padding: 20px;
@@ -94,6 +102,7 @@
         .info-row {
             display: flex;
             justify-content: space-between;
+            align-items: center;
             padding: 12px 0;
             border-bottom: 1px solid #1e2b38;
         }
@@ -114,6 +123,27 @@
             border-radius: 8px;
             cursor: pointer;
             margin-left: 10px;
+        }
+        .username-input {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .username-input input {
+            background: #17212b;
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            flex: 1;
+        }
+        .save-username-btn {
+            background: #2a6ee0;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 6px;
+            cursor: pointer;
         }
         .status-badge {
             display: inline-block;
@@ -175,6 +205,7 @@
         }
         .logout-btn {
             width: 100%;
+            max-width: 400px;
             padding: 14px;
             background: #f44336;
             color: white;
@@ -183,15 +214,20 @@
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            margin-top: 20px;
         }
         .hidden { display: none; }
+        .username-hint {
+            font-size: 12px;
+            color: #8a9aa8;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <button class="back-btn" onclick="window.location.href='/chats.html'">←</button>
         <h1>Мой профиль</h1>
+        <a href="/settings.html" class="settings-btn">⚙️ Настройки</a>
     </div>
 
     <div class="profile-content">
@@ -210,10 +246,20 @@
                 <span class="info-value" id="profile-name">Загрузка...</span>
                 <button class="edit-btn" onclick="showEditNameModal()">✎</button>
             </div>
+            
+            <div class="info-row">
+                <span class="info-label">Username</span>
+                <div class="info-value" id="profile-username">
+                    <span id="username-display">—</span>
+                    <button class="edit-btn" onclick="showEditUsername()">✎</button>
+                </div>
+            </div>
+            
             <div class="info-row">
                 <span class="info-label">Телефон</span>
                 <span class="info-value" id="profile-phone"></span>
             </div>
+            
             <div class="info-row">
                 <span class="info-label">Статус</span>
                 <span class="info-value" id="profile-status">
@@ -221,8 +267,9 @@
                     <span id="status-text"></span>
                 </span>
             </div>
+            
             <div class="info-row">
-                <span class="info-label">ID пользователя</span>
+                <span class="info-label">ID</span>
                 <span class="info-value" id="profile-id"></span>
             </div>
         </div>
@@ -242,6 +289,19 @@
         </div>
     </div>
 
+    <!-- Модалка редактирования username -->
+    <div class="modal hidden" id="edit-username-modal">
+        <div class="modal-content">
+            <h3>Изменить @username</h3>
+            <input type="text" id="edit-username-input" placeholder="username (только буквы, цифры, _)" pattern="[a-zA-Z0-9_]+">
+            <div class="username-hint">От 3 до 20 символов: a-z, 0-9, _</div>
+            <div class="modal-buttons">
+                <button class="save-btn" onclick="updateUsername()">Сохранить</button>
+                <button class="cancel-btn" onclick="closeModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
         let ws;
@@ -250,7 +310,6 @@
             window.location.href = '/';
         }
 
-        // Загрузка данных профиля
         async function loadProfile() {
             try {
                 const res = await fetch('/api/users/me', {
@@ -272,6 +331,12 @@
             document.getElementById('profile-name').textContent = user.name || 'Без имени';
             document.getElementById('profile-phone').textContent = user.phone || '';
             document.getElementById('profile-id').textContent = `#${user.id}`;
+            
+            if (user.username) {
+                document.getElementById('username-display').textContent = `@${user.username}`;
+            } else {
+                document.getElementById('username-display').textContent = '—';
+            }
             
             const statusBadge = document.getElementById('status-badge');
             const statusText = document.getElementById('status-text');
@@ -295,7 +360,6 @@
             }
         }
 
-        // Смена аватара
         document.getElementById('avatar-input').addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (!file) return;
@@ -329,7 +393,6 @@
             }
         });
 
-        // Редактирование имени
         function showEditNameModal() {
             document.getElementById('edit-name-input').value = document.getElementById('profile-name').textContent;
             document.getElementById('edit-name-modal').classList.remove('hidden');
@@ -366,12 +429,54 @@
             }
         }
 
-        function closeModal() {
-            document.getElementById('edit-name-modal').classList.add('hidden');
+        function showEditUsername() {
+            const current = document.getElementById('username-display').textContent;
+            document.getElementById('edit-username-input').value = current.startsWith('@') ? current.slice(1) : '';
+            document.getElementById('edit-username-modal').classList.remove('hidden');
         }
 
-        document.getElementById('edit-name-modal').addEventListener('click', function(e) {
-            if (e.target === this) closeModal();
+        async function updateUsername() {
+            const username = document.getElementById('edit-username-input').value.trim().toLowerCase();
+            
+            if (!username) return;
+            
+            if (!/^[a-zA-Z0-9_]{3,20}$/.test(username)) {
+                alert('Некорректный username. Используйте буквы, цифры и _, от 3 до 20 символов');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/users/username', {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username })
+                });
+
+                if (res.ok) {
+                    document.getElementById('username-display').textContent = `@${username}`;
+                    closeModal();
+                } else {
+                    const error = await res.json();
+                    alert(error.error || 'Ошибка при обновлении username');
+                }
+            } catch (e) {
+                console.error('Ошибка:', e);
+                alert('Ошибка соединения');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('edit-name-modal').classList.add('hidden');
+            document.getElementById('edit-username-modal').classList.add('hidden');
+        }
+
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', function(e) {
+                if (e.target === this) closeModal();
+            });
         });
 
         function logout() {
@@ -379,7 +484,6 @@
             window.location.href = '/';
         }
 
-        // WebSocket для статуса
         function connectWS() {
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             ws = new WebSocket(`${protocol}//${window.location.host}`);
