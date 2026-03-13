@@ -100,7 +100,7 @@ async function initDb() {
             )
         `);
 
-        // Сообщения
+        // Сообщения (ИСПРАВЛЕННАЯ ВЕРСИЯ - без reply_to)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS messages (
                 id SERIAL PRIMARY KEY,
@@ -111,7 +111,6 @@ async function initDb() {
                 media_type VARCHAR(20),
                 voice_url TEXT,
                 voice_duration INTEGER,
-                reply_to INTEGER REFERENCES messages(id) ON DELETE SET NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         `);
@@ -977,7 +976,7 @@ app.delete('/api/chats/:chatId', authenticateToken, async (req, res) => {
     }
 });
 
-// ========== СООБЩЕНИЯ (ИСПРАВЛЕННАЯ ВЕРСИЯ) ==========
+// ========== СООБЩЕНИЯ (ИСПРАВЛЕННАЯ ВЕРСИЯ - БЕЗ reply_to) ==========
 app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
     const { chatId } = req.params;
     const { limit = 50 } = req.query;
@@ -993,7 +992,7 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'Нет доступа к чату' });
         }
 
-        // Упрощенный запрос без JSON построения
+        // Простой запрос без reply_to
         const result = await pool.query(`
             SELECT 
                 m.id,
@@ -1004,20 +1003,14 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
                 m.media_type,
                 m.voice_url,
                 m.voice_duration,
-                m.reply_to,
                 m.created_at,
                 u.name as user_name,
                 u.phone,
                 u.avatar,
-                cr.custom_name,
-                rm.id as reply_id,
-                rm.text as reply_text,
-                ru.name as reply_user_name
+                cr.custom_name
             FROM messages m
             JOIN users u ON m.user_id = u.id
             LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
-            LEFT JOIN messages rm ON m.reply_to = rm.id
-            LEFT JOIN users ru ON rm.user_id = ru.id
             WHERE m.chat_id = $2
             ORDER BY m.created_at DESC
             LIMIT $3
@@ -1029,7 +1022,7 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
             [chatId, req.user.userId]
         );
 
-        // Форматируем ответ
+        // Форматируем ответ (без reply_to)
         const messages = result.rows.map(row => ({
             id: row.id,
             chat_id: row.chat_id,
@@ -1043,12 +1036,7 @@ app.get('/api/chats/:chatId/messages', authenticateToken, async (req, res) => {
             user_name: row.user_name,
             custom_name: row.custom_name,
             phone: row.phone,
-            avatar: row.avatar,
-            reply_to: row.reply_id ? {
-                id: row.reply_id,
-                text: row.reply_text,
-                user_name: row.reply_user_name
-            } : null
+            avatar: row.avatar
         }));
 
         res.json(messages.reverse());
@@ -1091,7 +1079,7 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
     { name: 'voice', maxCount: 1 }
 ]), async (req, res) => {
     const { chatId } = req.params;
-    const { text, duration, replyTo } = req.body;
+    const { text, duration } = req.body;
     const files = req.files;
 
     const client = await pool.connect();
@@ -1103,8 +1091,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
 
         if (text && text.trim()) {
             const textResult = await client.query(
-                'INSERT INTO messages (chat_id, user_id, text, reply_to) VALUES ($1, $2, $3, $4) RETURNING *',
-                [chatId, req.user.userId, text, replyTo || null]
+                'INSERT INTO messages (chat_id, user_id, text) VALUES ($1, $2, $3) RETURNING *',
+                [chatId, req.user.userId, text]
             );
             messages.push(textResult.rows[0]);
         }
@@ -1113,8 +1101,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             for (const photo of files.photos) {
                 const mediaUrl = `/uploads/${photo.filename}`;
                 const photoResult = await client.query(
-                    'INSERT INTO messages (chat_id, user_id, media_url, media_type, reply_to) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-                    [chatId, req.user.userId, mediaUrl, 'photo', replyTo || null]
+                    'INSERT INTO messages (chat_id, user_id, media_url, media_type) VALUES ($1, $2, $3, $4) RETURNING *',
+                    [chatId, req.user.userId, mediaUrl, 'photo']
                 );
                 messages.push(photoResult.rows[0]);
             }
@@ -1124,8 +1112,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             for (const video of files.videos) {
                 const mediaUrl = `/uploads/${video.filename}`;
                 const videoResult = await client.query(
-                    'INSERT INTO messages (chat_id, user_id, media_url, media_type, reply_to) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-                    [chatId, req.user.userId, mediaUrl, 'video', replyTo || null]
+                    'INSERT INTO messages (chat_id, user_id, media_url, media_type) VALUES ($1, $2, $3, $4) RETURNING *',
+                    [chatId, req.user.userId, mediaUrl, 'video']
                 );
                 messages.push(videoResult.rows[0]);
             }
@@ -1135,8 +1123,8 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
             const voice = files.voice[0];
             const voiceUrl = `/uploads/${voice.filename}`;
             const voiceResult = await client.query(
-                'INSERT INTO messages (chat_id, user_id, voice_url, voice_duration, media_type, reply_to) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
-                [chatId, req.user.userId, voiceUrl, duration || 0, 'voice', replyTo || null]
+                'INSERT INTO messages (chat_id, user_id, voice_url, voice_duration, media_type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+                [chatId, req.user.userId, voiceUrl, duration || 0, 'voice']
             );
             messages.push(voiceResult.rows[0]);
         }
@@ -1177,15 +1165,10 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
         for (const msg of messages) {
             const fullMsg = await client.query(`
                 SELECT m.*, u.name as user_name, u.phone, u.avatar,
-                       cr.custom_name,
-                       rm.id as reply_id,
-                       rm.text as reply_text,
-                       ru.name as reply_user_name
+                       cr.custom_name
                 FROM messages m
                 JOIN users u ON m.user_id = u.id
                 LEFT JOIN contact_renames cr ON cr.user_id = $1 AND cr.contact_user_id = u.id
-                LEFT JOIN messages rm ON m.reply_to = rm.id
-                LEFT JOIN users ru ON rm.user_id = ru.id
                 WHERE m.id = $2
             `, [req.user.userId, msg.id]);
             
@@ -1203,12 +1186,7 @@ app.post('/api/chats/:chatId/messages', authenticateToken, upload.fields([
                 user_name: row.user_name,
                 custom_name: row.custom_name,
                 phone: row.phone,
-                avatar: row.avatar,
-                reply_to: row.reply_id ? {
-                    id: row.reply_id,
-                    text: row.reply_text,
-                    user_name: row.reply_user_name
-                } : null
+                avatar: row.avatar
             });
         }
 
