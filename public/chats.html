@@ -22,7 +22,11 @@
             align-items: center;
         }
         .header h1 { font-size: 24px; }
-        .profile-btn {
+        .header-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        .contacts-btn, .profile-btn {
             background: transparent;
             border: 1px solid white;
             color: white;
@@ -33,9 +37,6 @@
             display: flex;
             align-items: center;
             gap: 5px;
-        }
-        .profile-btn:hover {
-            background: rgba(255,255,255,0.1);
         }
         .search {
             padding: 10px;
@@ -49,6 +50,35 @@
             border-radius: 8px;
             color: white;
             font-size: 16px;
+        }
+        .search-results {
+            position: absolute;
+            top: 180px;
+            left: 10px;
+            right: 10px;
+            background: #242f3d;
+            border-radius: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            display: none;
+        }
+        .search-results.show {
+            display: block;
+        }
+        .search-result-item {
+            display: flex;
+            align-items: center;
+            padding: 12px;
+            border-bottom: 1px solid #1e2b38;
+            cursor: pointer;
+        }
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+        .search-result-item:hover {
+            background: #17212b;
         }
         .chats-list {
             flex: 1;
@@ -110,17 +140,6 @@
             font-size: 12px;
             margin-top: 4px;
         }
-        .delete-chat-btn {
-            background: transparent;
-            border: none;
-            color: #f44336;
-            font-size: 18px;
-            cursor: pointer;
-            padding: 5px;
-            margin-top: 5px;
-            opacity: 0.7;
-        }
-        .delete-chat-btn:hover { opacity: 1; }
         .fab {
             position: fixed;
             bottom: 20px;
@@ -180,21 +199,11 @@
             margin-bottom: 5px;
         }
         .user-item:hover { background: #17212b; }
-        .user-item.selected {
-            background: #2a6ee0;
-        }
-        .user-checkbox {
-            width: 20px;
-            height: 20px;
-            margin-right: 10px;
-        }
         .loading { text-align: center; padding: 20px; color: #8a9aa8; }
-        .group-input {
-            margin: 15px 0;
-        }
-        .group-input input {
+        .search-input {
             width: 100%;
             padding: 10px;
+            margin-bottom: 15px;
             background: #17212b;
             border: none;
             color: white;
@@ -215,20 +224,33 @@
             background: #4a5a6a;
             cursor: not-allowed;
         }
+        .no-results {
+            text-align: center;
+            padding: 20px;
+            color: #8a9aa8;
+        }
     </style>
 </head>
 <body>
     <div class="app">
         <div class="header">
             <h1>Tapok</h1>
-            <button class="profile-btn" onclick="window.location.href='/profile.html'">
-                👤 Мой профиль
-            </button>
+            <div class="header-buttons">
+                <button class="contacts-btn" onclick="window.location.href='/contacts.html'">
+                    📱 Контакты
+                </button>
+                <button class="profile-btn" onclick="window.location.href='/profile.html'">
+                    👤 Профиль
+                </button>
+            </div>
         </div>
 
         <div class="search">
-            <input type="text" id="search-input" placeholder="Поиск чатов...">
+            <input type="text" id="search-input" placeholder="Поиск по чатам..." autocomplete="off">
         </div>
+
+        <!-- Результаты поиска -->
+        <div class="search-results" id="search-results"></div>
 
         <div class="chats-list" id="chats-list">
             <div class="loading">Загрузка чатов...</div>
@@ -237,7 +259,7 @@
         <button class="fab" onclick="showNewChatModal()">+</button>
     </div>
 
-    <!-- Модалка нового чата -->
+    <!-- Модалка поиска пользователей -->
     <div class="modal hidden" id="new-chat-modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -246,22 +268,16 @@
             </div>
             
             <div>
-                <input type="text" id="search-users" placeholder="Поиск по номеру или имени..." style="width:100%; padding:10px; margin-bottom:15px; background:#17212b; border:none; color:white; border-radius:5px;">
-                <div id="users-list"></div>
+                <input type="text" id="search-users" class="search-input" placeholder="Имя, телефон или @username">
+                <div id="users-list" class="loading">Введите имя для поиска</div>
             </div>
-
-            <div class="group-input">
-                <input type="text" id="group-name" placeholder="Название группы (если несколько)">
-            </div>
-
-            <button class="create-btn" id="create-chat-btn" onclick="createChat()" disabled>Создать чат</button>
         </div>
     </div>
 
     <script>
         let currentUser = JSON.parse(localStorage.getItem('user') || '{}');
         let ws;
-        let selectedUsers = [];
+        let searchTimeout;
 
         if (!localStorage.getItem('token')) {
             window.location.href = '/';
@@ -287,6 +303,7 @@
         }
         connectWS();
 
+        // ===== ЗАГРУЗКА ЧАТОВ =====
         async function loadChats() {
             try {
                 const res = await fetch('/api/chats', {
@@ -342,35 +359,80 @@
                         <div class="chat-meta">
                             <div class="chat-time">${time}</div>
                             ${chat.unread_count ? `<div class="unread-badge">${chat.unread_count}</div>` : ''}
-                            <button class="delete-chat-btn" onclick="event.stopPropagation(); deleteChat(${chat.id})">🗑️</button>
                         </div>
                     </div>
                 `;
             }).join('');
         }
 
-        async function deleteChat(chatId) {
-            if (!confirm('Удалить чат?')) return;
+        // ===== ПОИСК ПО ЧАТАМ =====
+        document.getElementById('search-input').addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            clearTimeout(searchTimeout);
             
+            if (query.length < 2) {
+                document.getElementById('search-results').classList.remove('show');
+                return;
+            }
+            
+            searchTimeout = setTimeout(() => searchChats(query), 300);
+        });
+
+        async function searchChats(query) {
             try {
-                const res = await fetch(`/api/chats/${chatId}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`
-                    }
+                const res = await fetch(`/api/chats/search?query=${encodeURIComponent(query)}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
                 
-                if (res.ok) loadChats();
-                else alert('Ошибка удаления');
+                const results = await res.json();
+                displaySearchResults(results);
             } catch (e) {
-                console.error('Ошибка удаления чата:', e);
+                console.error('Ошибка поиска:', e);
             }
         }
 
-        let searchTimeout;
+        function displaySearchResults(results) {
+            const resultsDiv = document.getElementById('search-results');
+            
+            if (results.length === 0) {
+                resultsDiv.innerHTML = '<div class="no-results">Ничего не найдено</div>';
+                resultsDiv.classList.add('show');
+                return;
+            }
+
+            resultsDiv.innerHTML = results.map(r => `
+                <div class="search-result-item" onclick="openChat(${r.id})">
+                    <div class="avatar" style="width:40px; height:40px; margin-right:10px;">
+                        ${r.type === 'group' ? '👥' : (r.avatar ? `<img src="${r.avatar}">` : r.name[0])}
+                    </div>
+                    <div>
+                        <div>${r.name}</div>
+                        ${r.username ? `<div style="font-size:12px; color:#8a9aa8;">@${r.username}</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
+            
+            resultsDiv.classList.add('show');
+        }
+
+        // Закрываем результаты поиска при клике вне
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search') && !e.target.closest('.search-results')) {
+                document.getElementById('search-results').classList.remove('show');
+            }
+        });
+
+        // ===== ПОИСК ПОЛЬЗОВАТЕЛЕЙ ДЛЯ НОВОГО ЧАТА =====
         document.getElementById('search-users').addEventListener('input', (e) => {
+            const query = e.target.value.trim();
             clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => searchUsers(e.target.value), 300);
+            
+            if (query.length < 2) {
+                document.getElementById('users-list').innerHTML = '<div class="loading">Введите минимум 2 символа</div>';
+                return;
+            }
+            
+            searchTimeout = setTimeout(() => searchUsers(query), 300);
         });
 
         async function searchUsers(query) {
@@ -378,8 +440,6 @@
                 const res = await fetch(`/api/users/search?query=${encodeURIComponent(query)}`, {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
-                
-                if (!res.ok) return;
                 
                 const users = await res.json();
                 displayUsers(users);
@@ -392,86 +452,40 @@
             const list = document.getElementById('users-list');
             
             if (!users || users.length === 0) {
-                list.innerHTML = '<div class="loading">Ничего не найдено</div>';
+                list.innerHTML = '<div class="no-results">Ничего не найдено</div>';
                 return;
             }
 
-            list.innerHTML = users.map(user => {
-                const isSelected = selectedUsers.includes(user.id);
-                return `
-                    <div class="user-item ${isSelected ? 'selected' : ''}" onclick="toggleUser(${user.id})">
-                        <input type="checkbox" class="user-checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation()">
-                        <div class="avatar" style="width:40px; height:40px;">
-                            ${user.avatar ? `<img src="${user.avatar}">` : (user.name ? user.name[0] : '?')}
-                        </div>
-                        <div style="margin-left:10px;">
-                            <div>${user.name || 'Без имени'}</div>
-                            <div style="font-size:12px; color:#8a9aa8;">${user.phone || ''}</div>
-                        </div>
+            list.innerHTML = users.map(user => `
+                <div class="user-item" onclick="openUserProfile(${user.id})">
+                    <div class="avatar" style="width:40px; height:40px; margin-right:10px;">
+                        ${user.avatar ? `<img src="${user.avatar}">` : (user.name ? user.name[0] : '?')}
                     </div>
-                `;
-            }).join('');
+                    <div>
+                        <div>${user.name || 'Без имени'}</div>
+                        ${user.username ? `<div style="font-size:12px; color:#8a9aa8;">@${user.username}</div>` : ''}
+                    </div>
+                </div>
+            `).join('');
         }
 
-        function toggleUser(userId) {
-            const index = selectedUsers.indexOf(userId);
-            if (index === -1) {
-                selectedUsers.push(userId);
-            } else {
-                selectedUsers.splice(index, 1);
-            }
-            
-            const query = document.getElementById('search-users').value;
-            searchUsers(query);
-            document.getElementById('create-chat-btn').disabled = selectedUsers.length === 0;
-        }
-
-        async function createChat() {
-            const groupName = document.getElementById('group-name').value;
-            const isGroup = selectedUsers.length > 1 || groupName;
-
-            try {
-                const res = await fetch('/api/chats', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        name: groupName || null,
-                        isGroup: isGroup,
-                        participants: selectedUsers
-                    })
-                });
-
-                if (!res.ok) throw new Error('Ошибка создания чата');
-
-                const chat = await res.json();
-                closeModal();
-                window.location.href = `/chat.html?id=${chat.id}`;
-            } catch (e) {
-                console.error('Ошибка создания чата:', e);
-                alert('Не удалось создать чат');
-            }
+        function openUserProfile(userId) {
+            closeModal();
+            window.location.href = `/user-profile.html?id=${userId}`;
         }
 
         function openChat(chatId) {
-            if (!chatId) return;
             window.location.href = `/chat.html?id=${chatId}`;
         }
 
         function showNewChatModal() {
-            selectedUsers = [];
             document.getElementById('new-chat-modal').classList.remove('hidden');
-            document.getElementById('group-name').value = '';
             document.getElementById('search-users').value = '';
-            document.getElementById('create-chat-btn').disabled = true;
-            searchUsers('');
+            document.getElementById('users-list').innerHTML = '<div class="loading">Введите имя для поиска</div>';
         }
 
         function closeModal() {
             document.getElementById('new-chat-modal').classList.add('hidden');
-            document.getElementById('users-list').innerHTML = '';
         }
 
         document.getElementById('new-chat-modal').addEventListener('click', function(e) {
@@ -479,7 +493,10 @@
         });
 
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Escape') {
+                closeModal();
+                document.getElementById('search-results').classList.remove('show');
+            }
         });
 
         loadChats();
