@@ -482,12 +482,13 @@
                 const chat = await res.json();
 
                 if (chat.is_group) {
-                    document.getElementById('chat-name').textContent = chat.name || 'Группа';
+                    // Для группы - название ведет в профиль группы
+                    document.getElementById('chat-name').innerHTML = `<a href="/group-profile.html?id=${chat.id}" style="color: white; text-decoration: none;">${chat.name || 'Группа'}</a>`;
                     document.getElementById('chat-status').textContent = chat.participants ? `${chat.participants.length} участников` : '';
                 } else {
                     const other = chat.participants?.find(p => p.id !== currentUser.id);
                     if (other) {
-                        // Имя теперь кликабельное и ведет в профиль
+                        // Для личного чата - имя ведет в профиль пользователя
                         document.getElementById('chat-name').innerHTML = `<a href="/user-profile.html?id=${other.id}" style="color: white; text-decoration: none;">${other.name || 'Пользователь'}</a>`;
                         document.getElementById('chat-status').textContent = other.status === 'online' ? 'онлайн' : 'офлайн';
                     }
