@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Tapok · пользователь</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #17212b;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            color: white;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            background: #2a6ee0;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            position: sticky;
+            top: 0;
+        }
+        .back-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .header h1 {
+            font-size: 20px;
+            flex: 1;
+        }
+        .profile-content {
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .avatar-container {
+            margin-bottom: 20px;
+        }
+        .profile-avatar {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: #242f3d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            color: white;
+            overflow: hidden;
+            border: 3px solid #2a6ee0;
+        }
+        .profile-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .info-card {
+            background: #242f3d;
+            border-radius: 12px;
+            padding: 20px;
+            width: 100%;
+            max-width: 400px;
+            margin-bottom: 20px;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #1e2b38;
+        }
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            color: #8a9aa8;
+        }
+        .info-value {
+            font-weight: bold;
+        }
+        .status-badge {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-online { background: #4caf50; }
+        .status-offline { background: #9e9e9e; }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            max-width: 400px;
+        }
+        .action-btn {
+            flex: 1;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .message-btn {
+            background: #2a6ee0;
+            color: white;
+        }
+        .chat-btn {
+            background: #00a884;
+            color: white;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <button class="back-btn" onclick="window.history.back()">←</button>
+        <h1>Профиль</h1>
+    </div>
+
+    <div class="profile-content">
+        <div class="avatar-container">
+            <div class="profile-avatar" id="avatar-display">
+                <span id="avatar-placeholder">?</span>
+                <img id="avatar-img" src="" style="display: none;">
+            </div>
+        </div>
+
+        <div class="info-card">
+            <div class="info-row">
+                <span class="info-label">Имя</span>
+                <span class="info-value" id="profile-name">Загрузка...</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Телефон</span>
+                <span class="info-value" id="profile-phone"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Статус</span>
+                <span class="info-value" id="profile-status">
+                    <span class="status-badge" id="status-badge"></span>
+                    <span id="status-text"></span>
+                </span>
+            </div>
+        </div>
+
+        <div class="action-buttons" id="action-buttons">
+            <!-- Кнопки появятся динамически -->
+        </div>
+    </div>
+
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const userId = urlParams.get('id');
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        let ws;
+
+        if (!localStorage.getItem('token')) {
+            window.location.href = '/';
+        }
+
+        if (!userId) {
+            window.location.href = '/chats.html';
+        }
+
+        // Загрузка данных пользователя
+        async function loadUserProfile() {
+            try {
+                const res = await fetch(`/api/users/${userId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                
+                if (!res.ok) throw new Error('Пользователь не найден');
+                
+                const user = await res.json();
+                displayProfile(user);
+                checkExistingChat(user);
+            } catch (e) {
+                console.error('Ошибка загрузки профиля:', e);
+                document.body.innerHTML = '<div style="text-align: center; padding: 50px; color: #f44336;">Пользователь не найден</div>';
+            }
+        }
+
+        function displayProfile(user) {
+            document.getElementById('profile-name').textContent = user.name || 'Без имени';
+            document.getElementById('profile-phone').textContent = user.phone || '';
+            
+            const statusBadge = document.getElementById('status-badge');
+            const statusText = document.getElementById('status-text');
+            
+            if (user.status === 'online') {
+                statusBadge.className = 'status-badge status-online';
+                statusText.textContent = 'онлайн';
+            } else {
+                statusBadge.className = 'status-badge status-offline';
+                statusText.textContent = 'офлайн';
+            }
+
+            if (user.avatar) {
+                document.getElementById('avatar-placeholder').style.display = 'none';
+                const img = document.getElementById('avatar-img');
+                img.src = user.avatar;
+                img.style.display = 'block';
+            } else {
+                document.getElementById('avatar-placeholder').style.display = 'block';
+                document.getElementById('avatar-placeholder').textContent = user.name ? user.name[0].toUpperCase() : '?';
+            }
+        }
+
+        // Проверяем, есть ли уже чат с этим пользователем
+        async function checkExistingChat(user) {
+            try {
+                const res = await fetch('/api/chats', {
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`
+                    }
+                });
+                
+                const chats = await res.json();
+                
+                // Ищем личный чат с этим пользователем
+                const existingChat = chats.find(chat => {
+                    if (chat.is_group) return false;
+                    const otherParticipant = chat.participants?.find(p => p.id === parseInt(userId));
+                    return otherParticipant;
+                });
+
+                const buttonsDiv = document.getElementById('action-buttons');
+                
+                if (existingChat) {
+                    // Если чат есть - кнопка "Перейти в чат"
+                    buttonsDiv.innerHTML = `
+                        <button class="action-btn chat-btn" onclick="openChat(${existingChat.id})">
+                            💬 Перейти в чат
+                        </button>
+                    `;
+                } else {
+                    // Если чата нет - кнопка "Написать сообщение"
+                    buttonsDiv.innerHTML = `
+                        <button class="action-btn message-btn" onclick="createPrivateChat(${user.id})">
+                            ✉️ Написать сообщение
+                        </button>
+                    `;
+                }
+            } catch (e) {
+                console.error('Ошибка проверки чата:', e);
+            }
+        }
+
+        // Создать личный чат
+        async function createPrivateChat(otherUserId) {
+            try {
+                const res = await fetch('/api/chats', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        participants: [otherUserId],
+                        isGroup: false
+                    })
+                });
+
+                if (!res.ok) throw new Error('Ошибка создания чата');
+
+                const chat = await res.json();
+                window.location.href = `/chat.html?id=${chat.id}`;
+            } catch (e) {
+                console.error('Ошибка создания чата:', e);
+                alert('Не удалось создать чат');
+            }
+        }
+
+        function openChat(chatId) {
+            window.location.href = `/chat.html?id=${chatId}`;
+        }
+
+        // WebSocket для статуса
+        function connectWS() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({
+                    type: 'auth',
+                    token: localStorage.getItem('token')
+                }));
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+                if (data.type === 'user_status' && data.userId === parseInt(userId)) {
+                    const statusBadge = document.getElementById('status-badge');
+                    const statusText = document.getElementById('status-text');
+                    
+                    if (data.status === 'online') {
+                        statusBadge.className = 'status-badge status-online';
+                        statusText.textContent = 'онлайн';
+                    } else {
+                        statusBadge.className = 'status-badge status-offline';
+                        statusText.textContent = 'офлайн';
+                    }
+                }
+            };
+        }
+
+        loadUserProfile();
+        connectWS();
+    </script>
+</body>
+</html>
