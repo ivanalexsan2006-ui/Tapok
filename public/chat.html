@@ -805,13 +805,13 @@
 
         async function unpinMessage(messageId) {
             try {
-                const res = await fetch(`/api/messages/${messageId}/pin?chatId=${chatId}`, {
+                const res = await fetch(`/api/messages/${messageId}/pin`, {
                     method: 'DELETE',
                     headers: {
                         'Authorization': `Bearer ${localStorage.getItem('token')}`,
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ chatId })
+                    body: JSON.stringify({ chatId: parseInt(chatId) })
                 });
 
                 if (res.ok) {
@@ -825,18 +825,24 @@
         // ===== ЗАГРУЗКА СООБЩЕНИЙ =====
         async function loadMessages() {
             try {
+                console.log('Загружаем сообщения для чата:', chatId);
                 const res = await fetch(`/api/chats/${chatId}/messages`, {
                     headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
                 });
 
-                if (!res.ok) throw new Error('Не удалось загрузить сообщения');
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.error || 'Ошибка загрузки');
+                }
 
                 const messages = await res.json();
+                console.log('Получены сообщения:', messages);
+                
                 if (Array.isArray(messages)) {
                     messages.forEach(msg => addMessage(msg, msg.user_id !== currentUser.id));
                 }
             } catch (e) {
-                console.error('Ошибка загрузки сообщений:', e);
+                console.error('❌ Ошибка загрузки сообщений:', e);
             }
         }
 
@@ -966,14 +972,21 @@
         }
 
         function replyToMessage() {
-            // TODO: реализовать ответ
-            console.log('Ответ на сообщение', selectedMessage);
+            if (selectedMessage) {
+                // Вставляем в поле ввода упоминание
+                const input = document.getElementById('message-input');
+                input.value = `↩️ ${selectedMessage.user_name}: `;
+                input.focus();
+                showToast('Ответ на сообщение');
+            }
             closeContextMenu();
         }
 
         function forwardMessage() {
-            // TODO: реализовать пересылку
-            console.log('Переслать сообщение', selectedMessage);
+            if (selectedMessage) {
+                // TODO: реализовать пересылку
+                showToast('Пересылка будет позже');
+            }
             closeContextMenu();
         }
 
@@ -987,7 +1000,7 @@
                         'Authorization': `Bearer ${localStorage.getItem('token')}`,
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ chatId })
+                    body: JSON.stringify({ chatId: parseInt(chatId) })
                 });
                 
                 if (res.ok) {
@@ -1045,7 +1058,7 @@
             setTimeout(() => toast.remove(), 2000);
         }
 
-        // ===== ОСТАЛЬНЫЕ ФУНКЦИИ (БЕЗ ИЗМЕНЕНИЙ) =====
+        // ===== ОСТАЛЬНЫЕ ФУНКЦИИ =====
         function formatDuration(seconds) {
             const mins = Math.floor(seconds / 60);
             const secs = seconds % 60;
@@ -1253,7 +1266,12 @@
             const formData = new FormData();
             
             if (text) {
-                formData.append('text', text);
+                // Проверяем, является ли текст ответом
+                if (text.startsWith('↩️')) {
+                    formData.append('text', text);
+                } else {
+                    formData.append('text', text);
+                }
                 input.value = '';
             }
 
