@@ -192,6 +192,10 @@ app.get('/profile.html', (req, res) => {
     res.sendFile(__dirname + '/public/profile.html');
 });
 
+app.get('/user-profile.html', (req, res) => {
+    res.sendFile(__dirname + '/public/user-profile.html');
+});
+
 // ========== MIDDLEWARE ==========
 async function authenticateToken(req, res, next) {
     const authHeader = req.headers['authorization'];
@@ -304,7 +308,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// ========== НОВЫЕ ЭНДПОИНТЫ ДЛЯ ПРОФИЛЯ ==========
+// ========== ЭНДПОИНТЫ ДЛЯ ПРОФИЛЯ ==========
 
 // Получить данные текущего пользователя
 app.get('/api/users/me', authenticateToken, async (req, res) => {
@@ -312,6 +316,27 @@ app.get('/api/users/me', authenticateToken, async (req, res) => {
         const result = await pool.query(
             'SELECT id, phone, name, avatar, status, last_seen FROM users WHERE id = $1',
             [req.user.userId]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Пользователь не найден' });
+        }
+        
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка сервера' });
+    }
+});
+
+// Получить данные другого пользователя
+app.get('/api/users/:userId', authenticateToken, async (req, res) => {
+    const { userId } = req.params;
+    
+    try {
+        const result = await pool.query(
+            'SELECT id, phone, name, avatar, status, last_seen FROM users WHERE id = $1',
+            [userId]
         );
         
         if (result.rows.length === 0) {
